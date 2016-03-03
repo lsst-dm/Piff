@@ -1,0 +1,159 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>The piffify executable &mdash; Piff 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="Piff 0.1 documentation" href="index.html" />
+    <link rel="next" title="Input" href="input.html" />
+    <link rel="prev" title="Overview" href="overview.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="input.html" title="Input"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="overview.html" title="Overview"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Piff 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="the-piffify-executable">
+<h1>The piffify executable<a class="headerlink" href="#the-piffify-executable" title="Permalink to this headline">¶</a></h1>
+<p>The normal way to construct a Piff PSF model is using the piffify executable program with
+a YAML configuration file:</p>
+<div class="highlight-python"><div class="highlight"><pre>piffify config_file
+</pre></div>
+</div>
+<p>The configuration file should have four fields which define the different aspects of
+the process:</p>
+<blockquote>
+<div><table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">input:</th><td class="field-body">Where to read the input images and catalogs.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">model:</th><td class="field-body">What kind of model to use to describe the PSF a single location.</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">interp:</th><td class="field-body">How to interpolate the coefficients of the model across the field of view.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">output:</th><td class="field-body">Where to write the output file.</td>
+</tr>
+</tbody>
+</table>
+</div></blockquote>
+<p>Each field is governed by a :type: parameter (although there are useful defaults for both
+:input: and :output:.  This corresponds to different classes in the Python code.
+The other parameters in each field correspond to the initialization kwargs for the class.</p>
+<p>For instance the following cofiguration file uses the <tt class="xref py py-class docutils literal"><span class="pre">Pixel</span></tt> class for the model and
+the <tt class="xref py py-class docutils literal"><span class="pre">Polynomial</span></tt> class for interpolation.  It uses the default
+<a class="reference internal" href="input.html#piff.InputFiles" title="piff.InputFiles"><tt class="xref py py-class docutils literal"><span class="pre">piff.InputFiles</span></tt></a> and <a class="reference internal" href="output.html#piff.OutputFile" title="piff.OutputFile"><tt class="xref py py-class docutils literal"><span class="pre">piff.OutputFile</span></tt></a> for I/O.:</p>
+<div class="highlight-python"><div class="highlight"><pre>input:
+    # default type is &#39;InputFiles&#39;, which can be (and typically is) omitted
+    images: some_exposure/image*.fits.fz
+    cats: some_exposure/cat*.fits
+    x_col: X_IMAGE
+    y_col: Y_IMAGE
+    weight_hdu: 3
+model:
+    type: Pixel
+    pixel_scale: 0.2
+    size: 64
+interp:
+    type: Polynomial
+    order: 3
+output:
+    # default type is &#39;InputFiles&#39;, which can be (and typically is) omitted
+    file_name: some_exposure/piff_solution.fits
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="overview.html"
+                        title="previous chapter">Overview</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="input.html"
+                        title="next chapter">Input</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/piffify.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="input.html" title="Input"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="overview.html" title="Overview"
+             >previous</a> |</li>
+        <li><a href="index.html">Piff 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2016, Mike Jarvis and the other collaborators at https://github.com/rmjarvis/Piff.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.2.
+    </div>
+  </body>
+</html>
