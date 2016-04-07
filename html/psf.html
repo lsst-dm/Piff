@@ -87,6 +87,29 @@ data vectors (produced by model for each star).</li>
 </table>
 </dd></dl>
 
+<dl class="method">
+<dt id="piff.PSF.drawImage">
+<tt class="descname">drawImage</tt><big>(</big><em>position</em>, <em>offset=None</em>, <em>logger=None</em>, <em>**kwargs</em><big>)</big><a class="headerlink" href="#piff.PSF.drawImage" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generates star given position and galsim Image</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>position</strong> &#8211; Position we are interpolating to.</li>
+<li><strong>offset</strong> &#8211; Tuple; sett the nominal center of the image
+relative to actual center of image [Default: None]</li>
+<li><strong>logger</strong> &#8211; A logger object for logging debug info. [default: None]</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">a galsim image</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
 <dl class="classmethod">
 <dt id="piff.PSF.read">
 <em class="property">classmethod </em><tt class="descname">read</tt><big>(</big><em>file_name</em>, <em>logger=None</em><big>)</big><a class="headerlink" href="#piff.PSF.read" title="Permalink to this definition">¶</a></dt>
