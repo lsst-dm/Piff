@@ -255,7 +255,9 @@ def test_single_image():
     # Do the whole thing with the config parser
     os.remove(psf_file)
 
+    print('Before run piffify from within test_simple.py')
     piff.piffify(config, logger)
+    print('After run piffify from within test_simple.py')
     psf = piff.read(psf_file)
     test_star = psf.interp.interpolate(target)
     np.testing.assert_almost_equal(test_star.fit.params, true_params, decimal=4)
@@ -265,9 +267,12 @@ def test_single_image():
     config['verbose'] = 0
     with open('simple.yaml','w') as f:
         f.write(yaml.dump(config, default_flow_style=False))
+    print('Before piffify exe')
     piffify_exe = get_script_name('piffify')
+    print('piffify_exe = ',piffify_exe)
     p = subprocess.Popen( [piffify_exe, 'simple.yaml'] )
     p.communicate()
+    print('After run piffify exe')
     psf = piff.read(psf_file)
     test_star = psf.interp.interpolate(target)
     np.testing.assert_almost_equal(test_star.fit.params, true_params, decimal=4)
@@ -354,6 +359,6 @@ def test_single_image():
     p.communicate()
 
 if __name__ == '__main__':
-    test_Gaussian()
-    test_Mean()
+    #test_Gaussian()
+    #test_Mean()
     test_single_image()

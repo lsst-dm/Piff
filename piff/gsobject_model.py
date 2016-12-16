@@ -220,7 +220,9 @@ class GSObjectModel(Model):
     @staticmethod
     def with_hsm(star):
         if not hasattr(star.data.properties, 'hsm'):
+            print('start with_hsm for ',star)
             flux, cenu, cenv, size, g1, g2, flag = hsm(star)
+            print('got hsm parameters')
             if flag != 0:
                 raise RuntimeError("Error initializing star fit values using hsm.")
             sd = star.data.copy()
