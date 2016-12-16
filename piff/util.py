@@ -167,10 +167,14 @@ def hsm(star):
     import galsim
     print('imported galsim: ',galsim.__version__,galsim.__file__)
     image, weight, image_pos = star.data.getImage()
+    print('image = ',repr(image))
+    print('weight = ',repr(weight))
+    print('image_pos = ',image_pos)
     # Note that FindAdaptiveMom only respects the weight function in a binary sense.  I.e., pixels
     # with non-zero weight will be included in the moment measurement, those with weight=0.0 will be
     # excluded.
     mom = image.FindAdaptiveMom(weight=weight, strict=False)
+    print('mom = ',mom)
 
     sigma = mom.moments_sigma
     shape = mom.observed_shape
