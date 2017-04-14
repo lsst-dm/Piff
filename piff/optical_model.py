@@ -202,12 +202,15 @@ class Optical(Model):
             aberrations = [0,0,0,0] + list(params)
             optics = galsim.OpticalPSF(aberrations=aberrations, **self.optical_psf_kwargs)
             prof.append(optics)
-            # convolve together
 
+        # convolve together
         if len(prof) == 0:
             raise RuntimeError('No profile returned by model!')
-
-        prof = galsim.Convolve(prof)
+        elif len(prof) == 1:
+            # why convolve a single entry?
+            prof = prof[0]
+        else:
+            prof = galsim.Convolve(prof)
 
         if self.g1 is not None or self.g2 is not None:
             prof = prof.shear(g1=self.g1, g2=self.g2)
