@@ -101,6 +101,7 @@ class PSF(object):
         """
         kwargs = {}
         kwargs.update(config_psf)
+        kwargs['logger'] = logger
         return kwargs
 
     def draw(self, x, y, chipnum=0, flux=1.0, offset=(0,0), stamp_size=48, image=None,

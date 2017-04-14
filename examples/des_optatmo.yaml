@@ -19,13 +19,13 @@
 input:
 
     # Define the location of the input images and catalogs
-    dir: /Users/Mike/Astro/des/Y1/y1_test  # You'll probably need to change this...
+    dir: /nfs/slac/g/ki/ki18/cpd/Projects/DES/Piff/tests/y1_test_dir  # You'll probably need to change this...
 
     # Note the * here.  For now, you can specif this eithe as a single filenames, a list of
     # filenames, or something that glob.glob() will understand.
     images: "DECam_00241238_%02d.fits.fz"
     cats: "DECam_00241238_%02d_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits"
-    chipnums: "[ c for c in range(1,63) if c is not 61 and c is not 31 ]"
+    chipnums: "[ c for c in range(1,5) if c is not 61 and c is not 31 ]"
 
     # What hdu is everything in?
     image_hdu: 1
@@ -53,7 +53,7 @@ psf:
         type: OpticalWavefront
 
         # where the knn file lives
-        knn_file_name: /Users/cpd/Projects/Piff/tests/wavefront_test/Science-20121120s1-v20i2.fits
+        knn_file_name: /nfs/slac/g/ki/ki18/cpd/Projects/DES/Piff/tests/wavefront_test/Science-20121120s1-v20i2_noextname.fits
 
         knn_extname: 1
 
@@ -71,7 +71,7 @@ psf:
         template: 'des'
 
         # ['minuit', or 'lmfit']
-        fitter: 'minuit'
+        fitter_algorithm: 'minuit'
 
     atmopsf:
         # This type of PSF will use a separate model/interp solution for each chip.
@@ -118,6 +118,8 @@ output:
         -
             type: ShapeHistograms
             file_name: "DECam_00241238_shapes.png"
+            bins_size: 100
+            bins_shape: 100
 
         -
             type: Rho
@@ -128,6 +130,12 @@ output:
             sep_units: arcmin
             bin_size: 0.5
 
+        -
+            type: TwoDHist
+            file_name: "DECam_00241238_twodhist.png"
+            number_bins_u: 20
+            number_bins_v: 20
+
 # Set the verbosity level a little higher than default (1) to give extra information
 # about the progress.
-verbose: 2
+verbose: 3

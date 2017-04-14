@@ -29,8 +29,8 @@ from .optical_model import Optical
 from .star import Star, StarFit, StarData
 # from .util import write_kwargs, read_kwargs, make_dtype, adjust_value
 
-from decam_wavefront import DECamWavefront
-from decaminfo import DECamInfo
+from .des.decam_wavefront import DECamWavefront
+from .des.decaminfo import DECamInfo
 
 from time import time
 
@@ -67,10 +67,10 @@ class OptAtmoPSF(PSF):
 
         kwargs = {}
         # find the psf_kinds
-        # psf_kinds = ['optpsf', 'atmopsf']
-        for psf_kind in cls.psf_kinds:
-            config = config_psf.pop(psf_kind)
-            kwargs[psf_kind] = piff.PSF.process(config, logger)
+        for psf_key in cls.psf_keys:
+            config = config_psf.pop(psf_key)
+            kwargs[psf_key] = piff.PSF.process(config, logger)
+            kwargs[psf_key]['logger'] = logger
 
         return kwargs
 
@@ -193,7 +193,7 @@ class OpticalWavefrontPSF(PSF):
         Constant optical sigma or kolmogorov, g1, g2 in model
         misalignments in interpolant: these are the interp.misalignment terms
     """
-    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, verbose=0, engine='galsim_fast', template='des', fitter_algorithm='minuit'):
+    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, verbose=0, engine='galsim_fast', template='des', fitter_algorithm='minuit', logger=None):
         """
 
         :param knn_file_name:               Fits file containing the wavefront
@@ -214,9 +214,15 @@ class OpticalWavefrontPSF(PSF):
         self.interp_kwargs.update(interp_kwargs)
 
         # it turns out this part can also be slow!
-        self.interp = DECamWavefront(knn_file_name, knn_extname, **self.interp_kwargs)
-        self.model_comparer = Gaussian(fastfit=True, force_model_center=True, include_pixel=True)
+        if logger:
+            logger.debug("Making interp")
+        self.interp = DECamWavefront(knn_file_name, knn_extname, logger=logger, **self.interp_kwargs)
+        if logger:
+            logger.debug("Making model_comparer Gaussian")
+        self.model_comparer = Gaussian(fastfit=True, force_model_center=True, include_pixel=True, logger=logger)
 
+        if logger:
+            logger.debug("Making DECamInfo")
         self.decaminfo = DECamInfo()
 
         self.weights = np.array(weights)
@@ -243,6 +249,8 @@ class OpticalWavefrontPSF(PSF):
             }
 
         # load up the model after kwargs are set
+        if logger:
+            logger.debug("Loading optical engine")
         self._engines = ['galsim', 'galsim_fast']
         self._model(template=template, engine=engine, **model_kwargs)
 
