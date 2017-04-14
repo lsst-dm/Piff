@@ -68,9 +68,9 @@ class TwoDHistStats(Stats):
 
         # get the shapes
         if logger:
-            logger.info("Measuring Star and Model Shapes")
-        positions, shapes_truth, shapes_model = self.measureShapes(psf, stars, logger=logger)
+            logger.info("Obtaining Star Model Parameters")
 
+        positions, shapes_truth, shapes_model = self.measureShapes(psf, stars, logger=logger)
         # Only use stars for which hsm was successful
         flag_truth = shapes_truth[:, 6]
         flag_model = shapes_model[:, 6]
@@ -96,8 +96,8 @@ class TwoDHistStats(Stats):
             logger.info("Computing TwoDHist indices")
 
         # fudge the bins by multiplying 1.01 so that the max entries are in the bins
-        self.bins_u = np.linspace(np.min(u), np.max(u) * 1.01, num=self.number_bins_u + 1)
-        self.bins_v = np.linspace(np.min(v), np.max(v) * 1.01, num=self.number_bins_v + 1)
+        self.bins_u = np.linspace(np.min(u), np.max(u) * 1.01, num=self.number_bins_u)
+        self.bins_v = np.linspace(np.min(v), np.max(v) * 1.01, num=self.number_bins_v)
 
         # digitize u and v. No such thing as entries below their min, so -1 to index
         indx_u = np.digitize(u, self.bins_u) - 1
@@ -174,12 +174,13 @@ class TwoDHistStats(Stats):
         axs[2, 0].set_xlabel('u')
         axs[2, 1].set_xlabel('u')
         axs[2, 2].set_xlabel('u')
-
         # make the colormaps
         if logger:
             logger.info("Creating TwoDHist colormaps")
         # T and T_model share colorbar
-        vmin__T = np.percentile([self.twodhists['T'], self.twodhists['T_model']], 10)
+        # note that T > 0, so let's make our life easier with that knowledge
+        Tvals = np.array([self.twodhists['T'], self.twodhists['T_model']])
+        vmin__T = np.min(Tvals[Tvals > 0])
         vmax__T = np.max([self.twodhists['T'], self.twodhists['T_model']])
         cmap__T = self._shift_cmap(vmin__T, vmax__T)
         # g1, g2, g1_model, g2_model share colorbar
@@ -275,8 +276,8 @@ class TwoDHistStats(Stats):
         return fig, axs
 
     def _array_to_2dhist(self, z, indx_u, indx_v, unique_indx):
-        C = np.ma.zeros((self.number_bins_v, self.number_bins_u))
-        C.mask = np.ones((self.number_bins_v, self.number_bins_u))
+        C = np.ma.zeros((self.number_bins_v - 1, self.number_bins_u - 1))
+        C.mask = np.ones((self.number_bins_v - 1, self.number_bins_u - 1))
 
         for unique in unique_indx:
             ui, vi = unique
@@ -463,8 +464,8 @@ class WhiskerStats(Stats):
             logger.info("Computing TwoDHist indices")
 
         # fudge the bins by multiplying 1.01 so that the max entries are in the bins
-        self.bins_u = np.linspace(np.min(u), np.max(u) * 1.01, num=self.number_bins_u + 1)
-        self.bins_v = np.linspace(np.min(v), np.max(v) * 1.01, num=self.number_bins_v + 1)
+        self.bins_u = np.linspace(np.min(u), np.max(u) * 1.01, num=self.number_bins_u)
+        self.bins_v = np.linspace(np.min(v), np.max(v) * 1.01, num=self.number_bins_v)
 
         # digitize u and v. No such thing as entries below their min, so -1 to index
         indx_u = np.digitize(u, self.bins_u) - 1
@@ -571,8 +572,8 @@ class WhiskerStats(Stats):
         return fig, axs
 
     def _array_to_2dhist(self, z, indx_u, indx_v, unique_indx):
-        C = np.ma.zeros((self.number_bins_v, self.number_bins_u))
-        C.mask = np.ones((self.number_bins_v, self.number_bins_u))
+        C = np.ma.zeros((self.number_bins_v - 1, self.number_bins_u - 1))
+        C.mask = np.ones((self.number_bins_v - 1, self.number_bins_u - 1))
 
         for unique in unique_indx:
             ui, vi = unique

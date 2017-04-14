@@ -20,7 +20,6 @@
 from __future__ import print_function
 
 import galsim
-import fitsio
 import numpy as np
 
 from .model import Model
@@ -37,10 +36,29 @@ optical_templates = {
              'strut_angle': 45 * galsim.degrees,
              'r0': 0.1,
            },
+    # 'des_no_obscuration': {
+    #          'nstruts': 4,
+    #          'diam': 4.274419,  # meters
+    #          'lam': 700, # nm
+    #          # aaron plays between 19 mm thick and 50 mm thick
+    #          'strut_thick': 0.050 * (1462.526 / 4010.) / 2.0, # conversion factor is nebulous?!
+    #          'strut_angle': 45 * galsim.degrees,
+    #          'r0': 0.1,
+    #        },
+    'lsst': { 'obscuration': 0.61,
+             'diam': 8.36,
+             'lam': 700, # nm
+             'r0': 0.1,
+           },
+    # 'lsst_no_obscuration': {
+    #          'diam': 8.36,
+    #          'lam': 700, # nm
+    #          'r0': 0.1,
+    #        },
 }
 
 class Optical(Model):
-    def __init__(self, template=None, logger=None, **kwargs):
+    def __init__(self, scale_optical_lambda=1.0, template=None, logger=None, gsparams=None, **kwargs):
         """Initialize the Optical Model
 
         There are potentially three components to this model that are convolved together.
@@ -49,6 +67,8 @@ class Optical(Model):
         profile.  The aberrations are considered fitted parameters, but the other attributes
         are fixed and are given at initialization.  These parameters are passed to GalSim, so
         they have the same definitions as used there.
+
+        :param scale_optical_lambda: [default: 1.0] factor by which to scale lambda to facilitate optical calculations. Potential speed up if doubled?
 
         :param diam:            Diameter of telescope aperture in meters. [required (but cf.
                                 template option)]
@@ -92,6 +112,9 @@ class Optical(Model):
         lambda=1000 nm (the default is 700), you could do:
 
                 >>> model = piff.OpticalModel(template='des', lam=1000)
+
+        :param gsparams:        Galsim GSParams object
+
         """
         # If pupil_angle and strut angle are provided as strings, eval them.
         for key in ['pupil_angle', 'strut_angle']:
@@ -100,7 +123,7 @@ class Optical(Model):
 
         # Copy over anything from the template dict, but let the direct kwargs override anything
         # in the template.
-        self.kwargs = {}
+        self.kwargs = {'scale_optical_lambda': scale_optical_lambda}
         if template is not None:
             if template not in optical_templates:
                 raise ValueError("Unknown template specified: %s"%template)
@@ -116,6 +139,8 @@ class Optical(Model):
                             'pupil_angle', 'pupil_plane_scale', 'pupil_plane_size')
         self.optical_psf_kwargs = { key : self.kwargs[key] for key in self.kwargs
                                                            if key in optical_psf_keys }
+        if 'lam' in self.optical_psf_kwargs:
+            self.optical_psf_kwargs['lam'] = self.kwargs['scale_optical_lambda'] * self.optical_psf_kwargs['lam']
 
         # Deal with the pupil plane image now so it only needs to be loaded from disk once.
         if 'pupil_plane_im' in kwargs:
@@ -125,6 +150,10 @@ class Optical(Model):
                     logger.debug('Loading pupil_plane_im from {0}'.format(pupil_plane_im))
                 pupil_plane_im = galsim.fits.read(pupil_plane_im)
             self.optical_psf_kwargs['pupil_plane_im'] = pupil_plane_im
+            # also need to cut several kwargs from optical_psf_kwargs if we have pupil_plane_im
+            pupil_plane_conflict_keys = ('circular_pupil', 'nstruts', 'strut_thick', 'strut_angle')
+            for key in pupil_plane_conflict_keys:
+                self.optical_psf_kwargs.pop(key, None)
 
         kolmogorov_keys = ('lam', 'r0', 'lam_over_r0', 'scale_unit',
                            'fwhm', 'half_light_radius', 'r0_500')
@@ -158,6 +187,9 @@ class Optical(Model):
             if key in self.kwargs:
                 self.kwargs[key] = repr(self.kwargs[key])
 
+        # save gsparams
+        self.gsparams = gsparams
+
     def fit(self, star):
         """Warning: This method just updates the fit with the chisq and dof!
 
@@ -188,11 +220,11 @@ class Optical(Model):
         prof = []
         # gaussian
         if self.sigma is not None:
-            gaussian = galsim.Gaussian(sigma=self.sigma)
+            gaussian = galsim.Gaussian(sigma=self.sigma, gsparams=self.gsparams)
             prof.append(gaussian)
         # atmosphere
         if len(self.kolmogorov_kwargs) > 0:
-            atm = galsim.Kolmogorov(**self.kolmogorov_kwargs)
+            atm = galsim.Kolmogorov(gsparams=self.gsparams, **self.kolmogorov_kwargs)
             prof.append(atm)
         # optics
         if params is None or len(params) == 0:
@@ -200,17 +232,14 @@ class Optical(Model):
             pass
         else:
             aberrations = [0,0,0,0] + list(params)
-            optics = galsim.OpticalPSF(aberrations=aberrations, **self.optical_psf_kwargs)
+            optics = galsim.OpticalPSF(aberrations=aberrations, gsparams=self.gsparams, **self.optical_psf_kwargs)
             prof.append(optics)
+            # convolve together
 
-        # convolve together
         if len(prof) == 0:
             raise RuntimeError('No profile returned by model!')
-        elif len(prof) == 1:
-            # why convolve a single entry?
-            prof = prof[0]
-        else:
-            prof = galsim.Convolve(prof)
+
+        prof = galsim.Convolve(prof)
 
         if self.g1 is not None or self.g2 is not None:
             prof = prof.shear(g1=self.g1, g2=self.g2)
@@ -230,5 +259,16 @@ class Optical(Model):
         center = galsim.PositionD(*star.fit.center)
         offset = star.data.image_pos + center - star.data.image.trueCenter()
         image = prof.drawImage(star.data.image.copy(), method='no_pixel', offset=offset)
-        data = StarData(image, star.data.image_pos, star.data.weight)
+        # TODO: might need to update image pos?
+        properties = star.data.properties.copy()
+        for key in ['x', 'y', 'u', 'v']:
+            # Get rid of keys that constructor doesn't want to see:
+            properties.pop(key,None)
+        data = StarData(image=image,
+                        image_pos=star.data.image_pos,
+                        weight=star.data.weight,
+                        pointing=star.data.pointing,
+                        field_pos=star.data.field_pos,
+                        values_are_sb=star.data.values_are_sb,
+                        properties=properties)
         return Star(data, star.fit)

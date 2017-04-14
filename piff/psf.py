@@ -101,7 +101,6 @@ class PSF(object):
         """
         kwargs = {}
         kwargs.update(config_psf)
-        kwargs['logger'] = logger
         return kwargs
 
     def draw(self, x, y, chipnum=0, flux=1.0, offset=(0,0), stamp_size=48, image=None,
@@ -148,7 +147,7 @@ class PSF(object):
         for key in self.extra_interp_properties:
             if key not in kwargs:
                 raise TypeError("Extra interpolation property %r is required"%key)
-            properties = kwags.pop(key)
+            properties = kwargs.pop(key)
         if len(kwargs) != 0:
             raise TypeError("draw got an unexpecte keyword argument %r"%kwargs.keys()[0])
 
@@ -208,6 +207,15 @@ class PSF(object):
         if logger:
             logger.info("Wrote the PSF WCS to extname %s", extname + '_wcs')
         self._finish_write(fits, extname=extname, logger=logger)
+
+    def _finish_write(self, fits, extname, logger):
+        """Finish the writing process with any class-specific steps.
+
+        :param fits:        An open fitsio.FITS object
+        :param extname:     The base name of the extension to write to.
+        :param logger:      A logger object for logging debug info.
+        """
+        pass
 
     @classmethod
     def read(cls, file_name, logger=None):
