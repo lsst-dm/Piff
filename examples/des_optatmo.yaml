@@ -25,7 +25,7 @@ input:
     # filenames, or something that glob.glob() will understand.
     images: "DECam_00241238_%02d.fits.fz"
     cats: "DECam_00241238_%02d_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits"
-    chipnums: "[ c for c in range(1,5) if c is not 61 and c is not 31 ]"
+    chipnums: "[ c for c in range(1,63) if c is not 61 and c is not 31 ]"
 
     # What hdu is everything in?
     image_hdu: 1
@@ -58,10 +58,10 @@ psf:
         knn_extname: 1
 
         # maximum number of steps to take
-        max_iterations: 30
+        max_iterations: 300
 
         # if > 0, number of stars to use in fit
-        n_fit_stars: 50
+        n_fit_stars: 20
 
         # fudge factor in chi square until we fix errors in hsm
         error_estimate: 0.001
@@ -73,37 +73,63 @@ psf:
         # ['minuit', or 'lmfit']
         fitter_algorithm: 'minuit'
 
+        fitter_kwargs:
+            fix_r0: False
+            fix_g1: False
+            fix_g2: False
+            fix_z04d: False
+            fix_z05d: False
+            fix_z06d: False
+            fix_z07d: False
+            fix_z08d: False
+            fix_z09d: False
+            fix_z10d: False
+            fix_z11d: True
+            fix_z04x: True
+            fix_z05x: True
+            fix_z06x: True
+            fix_z07x: False
+            fix_z08x: False
+            fix_z09x: True
+            fix_z10x: True
+            fix_z11x: True
+            fix_z04y: True
+            fix_z05y: True
+            fix_z06y: True
+            fix_z07y: False
+            fix_z08y: False
+            fix_z09y: True
+            fix_z10y: True
+            fix_z11y: True
+
     atmopsf:
         # This type of PSF will use a separate model/interp solution for each chip.
         type: SingleChip
 
-        outliers:
+        # outliers:
 
-            # This does outlier rejection based on the chisq value of the residual of the
-            # interpolated star with the original.
-            type: Chisq
+        #     # This does outlier rejection based on the chisq value of the residual of the
+        #     # interpolated star with the original.
+        #     type: Chisq
 
-            # The threshold is given in terms of nsigma equivalent, since that's how we normally
-            # think of this, but really this is based on the chisq probability distribution for the
-            # number of degrees of freedom the model has.
-            nsigma: 4
+        #     # The threshold is given in terms of nsigma equivalent, since that's how we normally
+        #     # think of this, but really this is based on the chisq probability distribution for the
+        #     # number of degrees of freedom the model has.
+        #     nsigma: 4
 
-            # Only remove at most 3 stars per iteration.
-            max_remove: 3
+        #     # Only remove at most 3 stars per iteration.
+        #     max_remove: 3
 
         model:
 
-            # This model uses a grid of pixels to model the surface brightness distribution.
-            type: PixelGrid
-            scale: 0.15     # Somewhat smaller than native pixel scale
-            size: 41        # Model is 41 x 41 in these pixels (so around 24 x 24 in native pixels)
-            start_sigma: 0.42462845010615713
+            # Gaussian
+            type: Gaussian
+            include_pixel: False
+            fastfit: True
 
         interp:
 
-            # This interpolator does some of the model solving when interpolating to handle degenerate
-            # information from masking and the fact that the pixels are smaller than native.
-            type: BasisPolynomial
+            type: Polynomial
             order: 2
 
 output:
@@ -138,4 +164,4 @@ output:
 
 # Set the verbosity level a little higher than default (1) to give extra information
 # about the progress.
-verbose: 3
+verbose: 2

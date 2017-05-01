@@ -70,19 +70,17 @@ class OptAtmoPSF(PSF):
         for psf_key in cls.psf_keys:
             config = config_psf.pop(psf_key)
             kwargs[psf_key] = piff.PSF.process(config, logger)
-            kwargs[psf_key]['logger'] = logger
 
         return kwargs
 
     def fit(self, stars, wcs, pointing,
-            max_iterations=300, logger=None, **kwargs):
+            logger=None, **kwargs):
         """Fit interpolated PSF model to star data using standard sequence of operations.
 
         :param stars:           A list of Star instances.
         :param wcs:             A dict of WCS solutions indexed by chipnum.
         :param pointing:        A galsim.CelestialCoord object giving the telescope pointing.
                                 [Note: pointing should be None if the WCS is not a CelestialWCS]
-        :param max_iterations:  Maximum number of iterations to try in OpticalWavefrontPSF. [default: 300]
         :param logger:          A logger object for logging debug info. [default: None]
         """
         self.stars = stars
@@ -94,12 +92,12 @@ class OptAtmoPSF(PSF):
         # fit OpticalWavefrontPSF
         if logger:
             logger.debug("Starting OpticalWavefrontPSF fit")
-        self.optpsf.fit(self.stars, wcs, pointing, max_iterations=max_iterations, logger=logger)
+        self.optpsf.fit(self.stars, wcs, pointing, logger=logger)
 
         # update stars from outlier rejection
         # TODO: mark stars probably changes this
         if self.optpsf.kwargs['n_fit_stars']:
-            nremoved = self.olptpsf.kwargs['n_fit_stars'] - len(self.optpsf._fit_stars)
+            nremoved = self.optpsf.kwargs['n_fit_stars'] - len(self.optpsf._fit_stars)
         else:
             nremoved = len(self._fit_stars) - len(self.optpsf._fit_stars)
         if nremoved > 0:
@@ -136,10 +134,21 @@ class OptAtmoPSF(PSF):
         else:
             logger.debug("Removed no stars in AtmospherePSF fit")
 
-        chisq = np.sum([s.fit.chisq for s in self.stars])
-        dof   = np.sum([s.fit.dof for s in self.stars])
-        if logger:
-            logger.warn("Total chisq = %.2f / %d dof", chisq, dof)
+        try:
+            chisq = np.sum([s.fit.chisq for s in self.stars])
+            dof   = np.sum([s.fit.dof for s in self.stars])
+            if logger:
+                logger.warn("Total chisq = %.2f / %d dof", chisq, dof)
+        except:
+            self.stars = self.atmopsf.stars
+            try:
+                chisq = np.sum([s.fit.chisq for s in self.stars])
+                dof   = np.sum([s.fit.dof for s in self.stars])
+                if logger:
+                    logger.warn("Total chisq = %.2f / %d dof", chisq, dof)
+            except:
+                if logger:
+                    logger.warn("Unable to produce chisq?!")
 
     def drawStar(self, star):
         """Generate PSF image for a given star.
@@ -193,7 +202,7 @@ class OpticalWavefrontPSF(PSF):
         Constant optical sigma or kolmogorov, g1, g2 in model
         misalignments in interpolant: these are the interp.misalignment terms
     """
-    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, verbose=0, engine='galsim_fast', template='des', fitter_algorithm='minuit', logger=None):
+    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', logger=None):
         """
 
         :param knn_file_name:               Fits file containing the wavefront
@@ -238,9 +247,7 @@ class OpticalWavefrontPSF(PSF):
             'pupil_plane_im': pupil_plane_im,
             'knn_file_name': knn_file_name,
             'knn_extname': knn_extname,
-            'fitter': fitter_kwargs,
             'fitter_algorithm': fitter_algorithm,
-            'verbose': verbose,
             'n_fit_stars': n_fit_stars,
             'max_iterations': max_iterations,
             'error_estimate': error_estimate,
@@ -260,7 +267,7 @@ class OpticalWavefrontPSF(PSF):
         self.fitter_kwargs = {
             'throw_nan': False,
             'pedantic': True,
-            'print_level': int(self.kwargs['verbose']),
+            'print_level': 0,
             'errordef': 0.5,  # guesstimated
 
             # note: r0 is in meters. Use 0.976 * lam / r0 = fwhm. This is odd, but lam is in nm, r0 is in m, and fwhm is in pixels?
@@ -270,8 +277,8 @@ class OpticalWavefrontPSF(PSF):
             }
         # throw in default zernike parameters
         for zi in range(4, 12):
-            for dxy in ['d', 'x',' y']:
-                zkey = 'z{0:2d}{1}'.format(zi, dxy)
+            for dxy in ['d', 'x', 'y']:
+                zkey = 'z{0:02d}{1}'.format(zi, dxy)
                 # initial value
                 self.fitter_kwargs[zkey] = 0
                 # fix
@@ -285,7 +292,7 @@ class OpticalWavefrontPSF(PSF):
                     zerror = 1e-4
                 self.fitter_kwargs['error_' + zkey] = zerror
         # update with kwargs
-        self.fitter_kwargs.update(self.kwargs['fitter'])
+        self.fitter_kwargs.update(fitter_kwargs)
 
         # initialize the _misalignment_fix array to False so we can set initial values
         self._misalignment_fix = np.array([[False] * 3] * (11 - 4 + 1))
@@ -372,7 +379,7 @@ class OpticalWavefrontPSF(PSF):
         :param logger:          A logger object for logging debug info. [default: None]
         """
         if logger:
-            logger.info("Start fitting OptAtmoPSF using %s stars", len(stars))
+            logger.warning("Start fitting OptAtmoPSF using %s stars", len(stars))
         self.wcs = wcs
         self.pointing = pointing
         self.stars = stars
@@ -387,15 +394,15 @@ class OpticalWavefrontPSF(PSF):
             if convolve_profiles:
                 self._fit_profiles = [profiles[i] for i in choice]
             if logger:
-                logger.info('Cutting from {0} to {1} stars'.format(len(self.all_stars), len(self._fit_stars)))
+                logger.warning('Cutting from {0} to {1} stars'.format(len(self.stars), len(self._fit_stars)))
         # get the moments of the stars for comparison
         if logger:
-            logger.info("Start measuring the shapes")
+            logger.warning("Start measuring the shapes")
         self._shapes = self._measure_shapes(self._fit_stars, logger=logger)
         # cut more stars if they fail shape measurement
         indx = ~np.any(self._shapes != self._shapes, axis=1)
         if logger:
-            logger.info("Cutting {0} stars out of {1}".format(sum(~indx), len(indx)))
+            logger.warning("Cutting {0} stars out of {1}".format(sum(~indx), len(indx)))
         self._shapes = self._shapes[indx]
         self._fit_stars = [star for star, ind in zip(self._fit_stars, indx) if ind]
         if convolve_profiles:
@@ -421,14 +428,14 @@ class OpticalWavefrontPSF(PSF):
         self._n_iter = 0
 
         if logger:
-            logger.info("Creating minuit object")
+            logger.debug("Creating minuit object")
             self._logger = logger
         else:
             self._logger = None
         self._minuit = Minuit(self._fit_func, **self.fitter_kwargs)
         # run the fit and solve! This will update the interior parameters
         if logger:
-            logger.info("Running migrad!")
+            logger.warning("Running migrad for {0} steps!".format(self.kwargs['max_iterations']))
         self._minuit.migrad(ncall=self.kwargs['max_iterations'])
         # self._hesse = self._minuit.hesse()
         # self._minos = self._minuit.minos()
@@ -437,22 +444,20 @@ class OpticalWavefrontPSF(PSF):
 
         # update params to best values
         if logger:
-            logger.info("Minuit Fitargs are {0}".format(self._fitarg))
-            logger.info("Minuit Fitargs:\n*****\n")
+            logger.debug("Minuit Fitargs:\n*****\n")
             for key in self._fitarg:
-                logger.info("{0}: {1}\n".format(key, self._fitarg[key]))
-            logger.info("Minuit Values are {0}".format(self._minuit.values))
-            logger.info("Minuit Values:\n*****\n")
+                logger.debug("{0}: {1}\n".format(key, self._fitarg[key]))
+            logger.debug("Minuit Values:\n*****\n")
             for key in self._minuit.values:
-                logger.info("{0}: {1}\n".format(key, self._minuit.values[key]))
+                logger.debug("{0}: {1}\n".format(key, self._minuit.values[key]))
         self._update_psf_params(**self._minuit.values)
 
         # save params and errors to the kwargs
-        self.kwargs['fitter'].update(self._fitarg)
+        self.fitter_kwargs.update(self._fitarg)
         if logger:
-            logger.info("Minuit kwargs are now:\n*****\n")
-            for key in self.kwargs['fitter']:
-                logger.info("{0}: {1}\n".format(key, self.kwargs['fitter'][key]))
+            logger.debug("Minuit kwargs are now:\n*****\n")
+            for key in self.fitter_kwargs:
+                logger.debug("{0}: {1}\n".format(key, self.fitter_kwargs[key]))
 
     def _lmfit_fit(self, stars, logger=None):
         """Fit interpolated PSF model to star data using lmfit implementation of Levenberg-Marquardt minimization
@@ -461,7 +466,7 @@ class OpticalWavefrontPSF(PSF):
         :param logger:          A logger object for logging debug info. [default: None]
         """
         if logger:
-            logger.info("Start fitting Optical fit using lmfit and %s stars", len(stars))
+            logger.debug("Start fitting Optical fit using lmfit and %s stars", len(stars))
         import lmfit
         # results = lmfit.minimize(resid_func, params, args)
         raise NotImplementedError("Finish me!")
@@ -564,32 +569,35 @@ class OpticalWavefrontPSF(PSF):
         indx = ~np.any(chi2_l != chi2_l, axis=1)
         chi2 = np.sum(chi2_l[indx], axis=0)
         dof = sum(indx)
-        if self.kwargs['verbose']:
+        if logger:
             log = ['\n',
-                    '* *********************************************** *\n',
+                    '*******************************************************************************\n',
                     '* time \t|\t {0:.3e} \t|\t ncalls  \t|\t {1} \n'.format(time() - self._time, self._n_iter),
-                    '* *********************************************** *\n',
-                    '* size \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(r0, g1, g2),
-                    '* z4   \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(z04d, z04x, z04y),
-                    '* z5   \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(z05d, z05x, z05y),
-                    '* z6   \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(z06d, z06x, z06y),
-                    '* z7   \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(z07d, z07x, z07y),
-                    '* z8   \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(z08d, z08x, z08y),
-                    '* z9   \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(z09d, z09x, z09y),
-                    '* z10  \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(z10d, z10x, z10y),
-                    '* z11  \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(z11d, z11x, z11y),
-                    '* chi2 \t|\t {0:.3e} \t|\t {1:.3e} \t|\t {2:.3e} *\n'.format(*(chi2 / dof)),
-                    '* *********************************************** *',
+                    '*******************************************************************************\n',
+                    '*  \t|\t d \t\t|\t x \t\t|\t y \t\t*\n',
+                    '*******************************************************************************\n',
+                    '* size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(r0, g1, g2),
+                    '* z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z04d, z04x, z04y),
+                    '* z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z05d, z05x, z05y),
+                    '* z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z06d, z06x, z06y),
+                    '* z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z07d, z07x, z07y),
+                    '* z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z08d, z08x, z08y),
+                    '* z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z09d, z09x, z09y),
+                    '* z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z10d, z10x, z10y),
+                    '* z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z11d, z11x, z11y),
+                    '*******************************************************************************\n',
+                    '* chi2 \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(*(chi2 / dof)),
+                    '*******************************************************************************',
                     ]
-            if self._n_iter % 10 == 0:
-                print(*log)
-            if logger:
+            if self._n_iter % 50 == 0:
+                logger.warning(''.join(log))
+            else:
                 logger.debug(''.join(log))
         self._n_iter += 1
         chi2_sum = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
         if logger:
-            if sum(dof) != len(dof):
-                logger.debug('Warning! We are using {0} stars out of {1} stars'.format(sum(dof), len(dof)))
+            if sum(indx) != len(indx):
+                logger.debug('Warning! We are using {0} stars out of {1} stars'.format(sum(indx), len(indx)))
             logger.debug('chi2 array:')
             logger.debug(chi2_sum)
             logger.debug(chi2)
@@ -639,6 +647,8 @@ class OpticalWavefrontPSF(PSF):
 
         :returns:           Galsim profile
         """
+        # put in the focal coordinates
+        star = self.decaminfo.pixel_to_focal(star)
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
         # get the profile
@@ -653,6 +663,8 @@ class OpticalWavefrontPSF(PSF):
 
         :returns:           Params
         """
+        # put in the focal coordinates
+        star = self.decaminfo.pixel_to_focal(star)
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
         return star.fit.params
