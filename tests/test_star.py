@@ -58,7 +58,7 @@ def test_init():
         'dec' : -15.567,
         'color_ri' : 0.5,
         'color_iz' : -0.2,
-        'ccdnum' : 3
+        'chipnum' : 3
     }
 
     stardata = piff.StarData(image, image_pos, weight=weight, properties=properties)

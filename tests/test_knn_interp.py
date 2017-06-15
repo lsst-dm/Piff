@@ -164,8 +164,8 @@ def test_disk():
 
 @timer
 def test_decam_wavefront():
-    file_name = 'wavefront_test/Science-20121120s1-v20i2.fits'
-    extname = 'Science-20121120s1-v20i2'
+    file_name = 'wavefront_test/Science-20121120s1-v20i2_noextname.fits'
+    extname = 1
 
     if __name__ == '__main__':
         logger = piff.config.setup_logger(verbose=2)
@@ -175,10 +175,10 @@ def test_decam_wavefront():
 
     n_samples = 2000
     np_rng = np.random.RandomState(1234)
-    ccdnums = np_rng.randint(1, 63, n_samples)
+    chipnums = np_rng.randint(1, 63, n_samples)
 
     star_list = []
-    for ccdnum in ccdnums:
+    for chipnum in chipnums:
         # make some basic images, pass Xi as properties
         # Draw the PSF onto an image.  Let's go ahead and give it a non-trivial WCS.
         wcs = galsim.JacobianWCS(0.26, 0.05, -0.08, -0.29)
@@ -189,7 +189,7 @@ def test_decam_wavefront():
         image.setCenter(icen, jcen)
         image_pos = image.center()
 
-        stardata = piff.StarData(image, image_pos, properties={'ccdnum': ccdnum})
+        stardata = piff.StarData(image, image_pos, properties={'chipnum': chipnum})
 
         star = piff.Star(stardata, None)
         star_list.append(star)
@@ -217,8 +217,8 @@ def test_decam_wavefront():
 
 @timer
 def test_decam_disk():
-    file_name = 'wavefront_test/Science-20121120s1-v20i2.fits'
-    extname = 'Science-20121120s1-v20i2'
+    file_name = 'wavefront_test/Science-20121120s1-v20i2_noextname.fits'
+    extname = 1
     knn = piff.des.DECamWavefront(file_name, extname, n_neighbors=30)
 
     misalignment = {'z04d': 10, 'z10x': 10, 'z09y': -10}

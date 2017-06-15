@@ -76,13 +76,13 @@ def test_twodstats():
     twodstats_file = os.path.join('output','whiskerstats.pdf')
     stats.write(twodstats_file)
 
-def make_star(icen=500, jcen=700, ccdnum=28,
+def make_star(icen=500, jcen=700, chipnum=28,
               sigma=1, g1=0, g2=0,
               pixel_to_focal=False,
               properties={},
               fit_kwargs={}):
 
-    properties['ccdnum'] = ccdnum
+    properties['chipnum'] = chipnum
     # setting scale is crucial
     stardata = piff.Star.makeTarget(x=icen, y=jcen, properties=properties,
                                     scale=0.263)
@@ -106,7 +106,7 @@ def generate_starlist(n_samples=500):
     np_rng = np.random.RandomState(1234)
     icens = np_rng.randint(100, 2048, n_samples)
     jcens = np_rng.randint(100, 4096, n_samples)
-    ccdnums = np_rng.randint(1, 63, n_samples)
+    chipnums = np_rng.randint(1, 63, n_samples)
     icenter = 1000
     jcenter = 2000
 
@@ -114,16 +114,16 @@ def generate_starlist(n_samples=500):
     conds = (np.abs(icens - icenter) > 400) | (np.abs(jcens - jcenter) > 400)
     icens = icens[conds]
     jcens = jcens[conds]
-    ccdnums = ccdnums[conds]
+    chipnums = chipnums[conds]
 
     sigmas, g1s, g2s = psf_model(icens, jcens, icenter, jcenter)
 
     # throw in a 2d polynomial function for sigma g1 and g2
     # all sigma > 0, all g1 < 0, and g2 straddles.
 
-    star_list = [make_star(icen, jcen, ccdnum, sigma, g1, g2)
-                 for icen, jcen, ccdnum, sigma, g1, g2
-                 in zip(icens, jcens, ccdnums, sigmas, g1s, g2s)]
+    star_list = [make_star(icen, jcen, chipnum, sigma, g1, g2)
+                 for icen, jcen, chipnum, sigma, g1, g2
+                 in zip(icens, jcens, chipnums, sigmas, g1s, g2s)]
 
     # load up model and draw the stars
     model = piff.Gaussian(fastfit=True)

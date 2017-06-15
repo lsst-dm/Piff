@@ -172,11 +172,11 @@ def plot_param(r0=0.1, params=[], g1=0, g2=0, sigma=0):
     plot_star(star)
     return star.data.data
 
-def make_empty_star(icen=500, jcen=700, ccdnum=28, params=None,
+def make_empty_star(icen=500, jcen=700, chipnum=28, params=None,
                     properties={},
                     fit_kwargs={}):
 
-    properties['ccdnum'] = ccdnum
+    properties['chipnum'] = chipnum
     # setting scale is crucial
     star = piff.Star.makeTarget(x=icen, y=jcen, properties=properties,
                                 scale=0.263)

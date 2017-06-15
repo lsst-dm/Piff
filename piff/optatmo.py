@@ -13,7 +13,7 @@
 #    and/or other materials provided with the distribution.
 
 """
-.. module:: decam_wavefront_psf
+.. module:: optatmo
 """
 
 from __future__ import print_function
@@ -91,7 +91,7 @@ class OptAtmoPSF(PSF):
 
         # fit OpticalWavefrontPSF
         if logger:
-            logger.debug("Starting OpticalWavefrontPSF fit")
+            logger.info("Starting OpticalWavefrontPSF fit")
         self.optpsf.fit(self.stars, wcs, pointing, logger=logger)
 
         # update stars from outlier rejection
@@ -103,11 +103,11 @@ class OptAtmoPSF(PSF):
         if nremoved > 0:
             logger.warning("Removed {0} stars in OpticalWavefrontPSF fit".format(nremoved))
         else:
-            logger.debug("Removed no stars in OpticalWavefrontPSF fit")
+            logger.info("Removed no stars in OpticalWavefrontPSF fit")
 
         # disable r0,g1,g2 from OpticalWavefrontPSF, since AtmoPSF deals with those bits.
         if logger:
-            logger.debug("Disabling atmosphere in OpticalWavefrontPSF")
+            logger.info("Disabling atmosphere in OpticalWavefrontPSF")
         self.optpsf._update_psf_params(r0=None, g1=None, g2=None)
         self.optpsf.fitter_kwargs['fix_r0'] = True
         self.optpsf.fitter_kwargs['fix_g1'] = True
@@ -119,12 +119,12 @@ class OptAtmoPSF(PSF):
 
         # extract profiles for AtmoPSF
         if logger:
-            logger.debug("Extracting OpticalWavefrontPSF profiles")
+            logger.info("Extracting OpticalWavefrontPSF profiles")
         profiles = [self.optpsf.getProfile(star) for star in self.stars]
 
         # fit AtmoPSF
         if logger:
-            logger.debug("Fitting AtmospherePSF")
+            logger.info("Fitting AtmospherePSF")
         self.atmopsf.fit(self.stars, wcs, pointing, profiles=profiles, logger=logger)
 
         # update stars from outlier rejection
@@ -132,7 +132,7 @@ class OptAtmoPSF(PSF):
         if nremoved > 0:
             logger.warning("Removed {0} stars in AtmospherePSF fit".format(nremoved))
         else:
-            logger.debug("Removed no stars in AtmospherePSF fit")
+            logger.info("Removed no stars in AtmospherePSF fit")
 
         try:
             chisq = np.sum([s.fit.chisq for s in self.stars])
@@ -172,6 +172,16 @@ class OptAtmoPSF(PSF):
         prof.drawImage(image, method='auto', offset=(star.image_pos-image.trueCenter()))
         data = StarData(image, star.image_pos, star.weight, star.data.pointing)
         return Star(data, StarFit(params))
+
+    def drawStarList(self, stars):
+        """Generate PSF images for given stars.
+
+        :param stars:       List of Star instances holding information needed for interpolation as
+                            well as an image/WCS into which PSF will be rendered.
+
+        :returns:           List of Star instances with its image filled with rendered PSF
+        """
+        return [self.drawStar(star) for star in stars]
 
     def _finish_write(self, fits, extname, logger):
         """Finish the writing process with any class-specific steps.
@@ -263,13 +273,7 @@ class OpticalWavefrontPSF(PSF):
 
 
         # put in the variable names and initial values
-        # TODO: This should be called from function
         self.fitter_kwargs = {
-            'throw_nan': False,
-            'pedantic': True,
-            'print_level': 0,
-            'errordef': 0.5,  # guesstimated
-
             # note: r0 is in meters. Use 0.976 * lam / r0 = fwhm. This is odd, but lam is in nm, r0 is in m, and fwhm is in pixels?
             'r0': 0.15, 'fix_r0': False,   'limit_r0': (0.01, 0.25), 'error_r0': 1e-2,
             'g1': 0,   'fix_g1': False,   'limit_g1': (-0.2, 0.2),  'error_g1': 1e-2,
@@ -291,7 +295,19 @@ class OpticalWavefrontPSF(PSF):
                 else:
                     zerror = 1e-4
                 self.fitter_kwargs['error_' + zkey] = zerror
-        # update with kwargs
+
+        # algorithm specific defaults
+        if self.kwargs['fitter_algorithm'] == 'minuit':
+            self.fitter_kwargs.update({
+                'throw_nan': False,
+                'pedantic': True,
+                'print_level': 0,
+                'errordef': 0.5,  # guesstimated
+                })
+        else:
+            raise NotImplementedError('fitter {0} not yet implmented!'.format(self.kwargs['fitter_algorithm']))
+
+        # update with user kwargs
         self.fitter_kwargs.update(fitter_kwargs)
 
         # initialize the _misalignment_fix array to False so we can set initial values
@@ -435,7 +451,7 @@ class OpticalWavefrontPSF(PSF):
         self._minuit = Minuit(self._fit_func, **self.fitter_kwargs)
         # run the fit and solve! This will update the interior parameters
         if logger:
-            logger.warning("Running migrad for {0} steps!".format(self.kwargs['max_iterations']))
+            logger.info("Running migrad for {0} steps!".format(self.kwargs['max_iterations']))
         self._minuit.migrad(ncall=self.kwargs['max_iterations'])
         # self._hesse = self._minuit.hesse()
         # self._minos = self._minuit.minos()
@@ -466,10 +482,10 @@ class OpticalWavefrontPSF(PSF):
         :param logger:          A logger object for logging debug info. [default: None]
         """
         if logger:
-            logger.debug("Start fitting Optical fit using lmfit and %s stars", len(stars))
-        import lmfit
+            logger.info("Start fitting Optical fit using lmfit and %s stars", len(stars))
+        # import lmfit
         # results = lmfit.minimize(resid_func, params, args)
-        raise NotImplementedError("Finish me!")
+        raise NotImplementedError("lmfit not currently implemented")
 
     def _update_psf_params(self,
                            r0=np.nan, g1=np.nan, g2=np.nan,
@@ -572,21 +588,21 @@ class OpticalWavefrontPSF(PSF):
         if logger:
             log = ['\n',
                     '*******************************************************************************\n',
-                    '* time \t|\t {0:.3e} \t|\t ncalls  \t|\t {1} \n'.format(time() - self._time, self._n_iter),
+                    '* time \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
                     '*******************************************************************************\n',
-                    '*  \t|\t d \t\t|\t x \t\t|\t y \t\t*\n',
+                    '*  \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
                     '*******************************************************************************\n',
-                    '* size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(r0, g1, g2),
-                    '* z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z04d, z04x, z04y),
-                    '* z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z05d, z05x, z05y),
-                    '* z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z06d, z06x, z06y),
-                    '* z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z07d, z07x, z07y),
-                    '* z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z08d, z08x, z08y),
-                    '* z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z09d, z09x, z09y),
-                    '* z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z10d, z10x, z10y),
-                    '* z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(z11d, z11x, z11y),
+                    '* size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(r0, g1, g2),
+                    '* z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z04d, z04x, z04y),
+                    '* z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z05d, z05x, z05y),
+                    '* z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z06d, z06x, z06y),
+                    '* z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z07d, z07x, z07y),
+                    '* z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z08d, z08x, z08y),
+                    '* z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z09d, z09x, z09y),
+                    '* z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z10d, z10x, z10y),
+                    '* z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z11d, z11x, z11y),
                     '*******************************************************************************\n',
-                    '* chi2 \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e} *\n'.format(*(chi2 / dof)),
+                    '* chi2 \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(*(chi2 / dof)),
                     '*******************************************************************************',
                     ]
             if self._n_iter % 50 == 0:
@@ -599,11 +615,11 @@ class OpticalWavefrontPSF(PSF):
             if sum(indx) != len(indx):
                 logger.debug('Warning! We are using {0} stars out of {1} stars'.format(sum(indx), len(indx)))
             logger.debug('chi2 array:')
-            logger.debug(chi2_sum)
-            logger.debug(chi2)
-            logger.debug(self.weights * chi2)
-            logger.debug(dof * np.sum(self.weights))
-            logger.debug(chi2_l)
+            logger.debug('chi2 summed: {0}'.format(chi2_sum))
+            logger.debug('chi2 in each shape: {0}'.format(chi2))
+            logger.debug('chi2 with weights: {0}'.format(self.weights * chi2))
+            logger.debug('sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
+            logger.debug('chi2 for each star:\n{0}'.format(chi2_l))
         return chi2_sum
 
     def drawStarList(self, stars):
