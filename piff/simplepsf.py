@@ -153,8 +153,13 @@ class SimplePSF(PSF):
                 logger.warning("Iteration %d: Fitting %d stars", iteration+1, len(self.stars))
 
             fit_fn = self.model.chisq if quadratic_chisq else self.model.fit
-            convolve_profiles = len(profiles) and getattr(self.model, "getProfile", False)
-            if len(profiles) and not getattr(self.model, "getProfile", False):
+            try:
+                len_profiles = len(profiles)
+            except TypeError:
+                # None has no length
+                len_profiles = 0
+            convolve_profiles = len_profiles and getattr(self.model, "getProfile", False)
+            if len_profiles and not getattr(self.model, "getProfile", False):
                 raise NotImplementedError("No getProfile function for {0}!".format(self.model))
 
             nremoved = 0
