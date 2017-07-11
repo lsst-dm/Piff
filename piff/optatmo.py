@@ -170,7 +170,8 @@ class OptAtmoPSF(PSF):
         prof = galsim.Convolve(profs)
         image = star.image.copy()
         prof.drawImage(image, method='auto', offset=(star.image_pos-image.trueCenter()))
-        data = StarData(image, star.image_pos, star.weight, star.data.pointing)
+        # keep star properties by using setData instead
+        data = star.data.setData(image.array.flatten())
         return Star(data, StarFit(params))
 
     def drawStarList(self, stars):
