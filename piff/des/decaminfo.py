@@ -294,6 +294,7 @@ class DECamInfo(object):
         for key in ['x', 'y', 'u', 'v']:
             # Get rid of keys that constructor doesn't want to see:
             properties.pop(key,None)
+        # TODO: need to set other values, too?
         return StarData(image=stardata.image,
                         image_pos=stardata.image_pos,
                         weight=stardata.weight,
@@ -319,3 +320,26 @@ class DECamInfo(object):
         :returns starsl:  New stars with updated properties
         """
         return [Star(self.pixel_to_focal_stardata(star.data), star.fit) for star in stars]
+
+    def get_nominal_wcs(self, chipnum):
+        """Given a chip, return a galsim wcs object with reasonable values. Useful for generating fake stars.
+
+        :param chipnum:     Chip we are looking at
+
+        :returns wcs:       Galsim wcs object
+
+        Note! This is NOT a 100 percent real wcs! All I have done here is create a galsim wcs object whose center (u,v) = (0,0) corresponds to the focal plane (focal_x, focal_y) = (0, 0) and who has a reasonable jacobian transformation about the center. For simplicity, set dudx, dvdy = 0, and dudy, dvdx = -0.26. This is pretty close to what the y1 test images look like...
+        """
+        import galsim
+
+        # get center and convert to pixels.
+        xpix, ypix = self.getPixel_chipnum(chipnum, 0, 0)
+        # now we know that dudx etc, so convert xpix and ypix to uarcsec varcsec
+        arcsec_over_pixel = 0.26
+        # also a minus sign because the axes also flip
+        uarcsec = ypix * -arcsec_over_pixel
+        varcsec = xpix * -arcsec_over_pixel
+        world_origin = galsim.PositionD(uarcsec, varcsec)
+        wcs = galsim.AffineTransform(0, -arcsec_over_pixel, -arcsec_over_pixel, 0, world_origin=-world_origin)
+
+        return wcs

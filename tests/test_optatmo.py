@@ -24,10 +24,6 @@ from piff_test_helper import get_script_name, timer
 
 from time import time
 
-def leave():
-    import os
-    os._exit(1)
-
 def create_fit_dict():
     # code for returning everything we need for the fits
 
@@ -36,7 +32,7 @@ def create_fit_dict():
     # input
     dir_path = os.path.dirname(os.path.realpath(__file__))
     piff_dict['input'] = {
-        'dir': dir_path + '/y1_test_dir',
+        'dir': dir_path + '/y1_test',
         'images': "DECam_00241238_%02d.fits.fz",
         'cats': "DECam_00241238_%02d_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits",
         'chipnums': "[ c for c in range(1,63) if c is not 61 and c is not 31 ]",
@@ -157,9 +153,11 @@ def create_fit_dict():
 
     return piff_dict
 
-def create_synthetic_optatmo(fit_dict, misalignment={'z04d': -0.5, 'r0': 0.1, 'g1': 0.02, 'g2': -0.05}, n_samples=2000, logger=None):
+def create_synthetic_optatmo(fit_dict, misalignment={'z04d': -0.5, 'r0': 0.1, 'g1': 0.02, 'g2': -0.05}, n_samples=10000, logger=None):
     """creates synthetic catalog with a misalignment and a constant ellipticity"""
-    # this bit mostly borrowed from test_knn_interp
+
+    decaminfo = piff.des.DECamInfo()
+
     # generate star coordinates
     np_rng = np.random.RandomState(1234)
     # only fit small number of chips
@@ -168,25 +166,21 @@ def create_synthetic_optatmo(fit_dict, misalignment={'z04d': -0.5, 'r0': 0.1, 'g
     star_list = []
     wcs_field = {}
     for chipnum in chipnums:
-        # make some basic images, pass Xi as properties
-        # Draw the PSF onto an image.  Let's go ahead and give it a non-trivial WCS.
-        wcs = galsim.JacobianWCS(0.26, 0.05, -0.08, -0.29)
+        wcs = decaminfo.get_nominal_wcs(chipnum)
         wcs_field[chipnum] = wcs
-        image = galsim.Image(64,64, wcs=wcs)
-        # set icen and jcen
         icen = np_rng.randint(100, 2048) * 1.
         jcen = np_rng.randint(100, 4096) * 1.
-        image.setCenter(icen, jcen)
-        # image.center() returns PositionI, but we need PositionD
         image_pos = galsim.PositionD(icen, jcen)
+        image = galsim.Image(64,64, wcs=wcs)
+        image.setCenter(33, 33)
 
         stardata = piff.StarData(image, image_pos, properties={'chipnum': chipnum})
-
         star = piff.Star(stardata, None)
+
         star_list.append(star)
 
     # get the focal positions
-    star_list = piff.des.DECamInfo().pixel_to_focalList(star_list)
+    star_list = decaminfo.pixel_to_focalList(star_list)
 
     # create fake psf
     fit_dict = fit_dict.copy() # don't modify original fit_dict
