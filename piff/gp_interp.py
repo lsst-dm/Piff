@@ -17,6 +17,7 @@
 """
 
 import numpy as np
+import copy
 
 from sklearn.gaussian_process.kernels import StationaryKernelMixin, NormalizedKernelMixin, Kernel
 from sklearn.gaussian_process.kernels import Hyperparameter
@@ -60,8 +61,8 @@ class GPInterp(Interp):
             'kernel': kernel
         }
         optimizer = 'fmin_l_bfgs_b' if optimize else None
-        self.gp = GaussianProcessRegressor(self._eval_kernel(self.kernel), optimizer=optimizer,
-                                           normalize_y=normalize)
+        self.gp_template = GaussianProcessRegressor(
+                self._eval_kernel(self.kernel), optimizer=optimizer, normalize_y=normalize)
 
     @staticmethod
     def _eval_kernel(kernel):
@@ -90,8 +91,8 @@ class GPInterp(Interp):
 
     def _fit(self, X, y, logger=None):
         """Update the GaussianProcessRegressor with data
-        :param X:  The independent covariates.  (n_samples, n_features)
-        :param y:  The dependent responses.  (n_samples, n_targets)
+        :param X:   The independent covariates.  (n_samples, n_features)
+        :param y:   The dependent responses.  (n_samples, n_targets)
         """
         # Save these for potential read/write.
         self._X = X
@@ -101,14 +102,19 @@ class GPInterp(Interp):
             self._pca = PCA(n_components=self.npca, whiten=True)
             self._pca.fit(y)
             y = self._pca.transform(y)
-        self.gp.fit(X, y)
+        for i in range(self.nparams):
+            gp = self.gps[i]
+            yy = y[:,i:i+1]
+            gp.fit(X, yy)
+            if logger:
+                logger.info('param %d: '%i,gp.kernel)
 
     def _predict(self, Xstar):
         """ Predict responses given covariates.
         :param X:  The independent covariates at which to interpolate.  (n_samples, n_features).
         :returns:  Regressed parameters  (n_samples, n_targets)
         """
-        ystar = self.gp.predict(Xstar)
+        ystar = np.array([gp.predict(Xstar)[:,0] for gp in self.gps]).T
         if self.npca > 0:
             ystar = self._pca.inverse_transform(ystar)
         return ystar
@@ -132,6 +138,10 @@ class GPInterp(Interp):
         :param stars:   A list of Star instances to interpolate between
         :param logger:  A logger object for logging debug info. [default: None]
         """
+        self.nparams = len(stars[0].fit.params)
+        if self.npca > 0:
+            self.nparams = self.npca
+        self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)]
         return stars
 
     def solve(self, stars=None, logger=None):
@@ -178,8 +188,9 @@ class GPInterp(Interp):
         # Note, we're only storing the training data and hyperparameters here, which means the
         # Cholesky decomposition will have to be re-computed when this object is read back from
         # disk.
-        init_theta = self.gp.kernel.theta
-        fit_theta = self.gp.kernel_.theta
+        init_theta = np.array([gp.kernel.theta for gp in self.gps])
+        fit_theta = np.array([gp.kernel_.theta for gp in self.gps])
+
         dtypes = [('INIT_THETA', init_theta.dtype, init_theta.shape),
                   ('FIT_THETA', fit_theta.dtype, fit_theta.shape),
                   ('X', self._X.dtype, self._X.shape),
@@ -197,12 +208,22 @@ class GPInterp(Interp):
         data = fits[extname+'_kernel'].read()
         # Run fit to set up GP, but don't actually do any hyperparameter optimization.  Just
         # set the GP up using the current hyperparameters.
-        self.gp.kernel.theta = np.atleast_1d(data['FIT_THETA'][0])
-        old_optimizer, self.gp.optimizer = self.gp.optimizer, None
-        self._fit(data['X'][0], data['Y'][0])
-        self.gp.optimizer = old_optimizer
-        # Now that gp is setup, we can restore it's initial kernel.
-        self.gp.kernel.theta = np.atleast_1d(data['INIT_THETA'][0])
+        init_theta = np.atleast_1d(data['INIT_THETA'][0])
+        fit_theta = np.atleast_1d(data['FIT_THETA'][0])
+        self._X = np.atleast_1d(data['X'][0])
+        self._Y = np.atleast_1d(data['Y'][0])
+        self.nparams = len(init_theta)
+        self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)]
+        for i in range(self.nparams):
+            gp = self.gps[i]
+            gp.kernel.theta = fit_theta[i]
+            gp.optimizer = None
+        self._fit(self._X, self._Y)
+        for i in range(self.nparams):
+            gp = self.gps[i]
+            gp.optimizer = self.gp_template.optimizer
+            # Now that gp is setup, we can restore it's initial kernel.
+            gp.kernel.theta = init_theta[i]
 
 
 class ExplicitKernel(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
