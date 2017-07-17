@@ -731,9 +731,9 @@ def test_guess():
     for guess in guesses:
         # noise of 0.3 turns out to be pretty significant here.
         stars = params_to_stars(training_data, noise=0.3, rng=rng)
-        kernel = "1*RBF({0}, (1e-1, 1e1))".format(guess)
+        kernel = "1*RBF({0}, (1e-2, 1e1))".format(guess)
         kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
-        interp = piff.GPInterp(kernel=kernel, normalize=False)
+        interp = piff.GPInterp(kernel=kernel)
         stars = [mod.fit(s) for s in stars]
         stars = interp.initialize(stars)
         interp.solve(stars)
@@ -748,11 +748,11 @@ def test_guess():
     #     The only one that fails with rtol=0.15 is the input guess of 0.3, which seems odd...
     #     In any case, for now I'm bumping up the rtol from 0.15 to 0.25 to make it pass.
     #     But it might be worth more investigation to see if this is actually ok.
-    np.testing.assert_allclose(inferred_scale_length, 0.3, rtol=0.25)
+    np.testing.assert_allclose(inferred_scale_length, 0.3, rtol=0.10)
     # More interesting however, is how independent is the optimization wrt the initial value.
     # So check that the standard deviation of the results is much smaller than the value.
     # MJ: This also needed to be bumped up from 0.3*rtol to just rtol.  (rel diff = 0.0132)
-    np.testing.assert_array_less(np.std(inferred_scale_length), rtol)
+    np.testing.assert_array_less(np.std(inferred_scale_length), 0.5*rtol)
 
 
 @timer
