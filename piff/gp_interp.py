@@ -107,7 +107,7 @@ class GPInterp(Interp):
             yy = y[:,i:i+1]
             gp.fit(X, yy)
             if logger:
-                logger.info('param %d: '%i,gp.kernel)
+                logger.info('param %d: %s',i,gp.kernel_)
 
     def _predict(self, Xstar):
         """ Predict responses given covariates.
