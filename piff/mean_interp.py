@@ -57,22 +57,24 @@ class Mean(Interp):
             fit = star.fit.newParams(self.mean)
         return Star(star.data, fit)
 
-    def _finish_write(self, fits, extname):
+    def _finish_write(self, fits, extname, logger=None):
         """Write the solution to a FITS binary table.
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension
+        :param logger:      A logger object for logging debug info.
         """
         cols = [ self.mean ]
         dtypes = [ ('mean', float) ]
         data = np.array(list(zip(*cols)), dtype=dtypes)
         fits.write_table(data, extname=extname + '_solution')
 
-    def _finish_read(self, fits, extname):
+    def _finish_read(self, fits, extname, logger=None):
         """Read the solution from a FITS binary table.
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension
+        :param logger:      A logger object for logging debug info.
         """
         data = fits[extname + '_solution'].read()
         self.mean = data['mean']

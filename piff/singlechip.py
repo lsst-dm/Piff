@@ -138,7 +138,7 @@ class SingleChipPSF(PSF):
         star = self.psf_by_chip[chipnum].interp.interpolate(star)
         return star.fit.params
 
-    def _finish_write(self, fits, extname, logger):
+    def _finish_write(self, fits, extname, logger=None):
         """Finish the writing process with any class-specific steps.
 
         :param fits:        An open fitsio.FITS object
@@ -158,7 +158,7 @@ class SingleChipPSF(PSF):
         for chipnum in self.psf_by_chip:
             self.psf_by_chip[chipnum]._write(fits, extname + '_%s'%chipnum, logger)
 
-    def _finish_read(self, fits, extname, logger):
+    def _finish_read(self, fits, extname, logger=None):
         """Finish the reading process with any class-specific steps.
 
         :param fits:        An open fitsio.FITS object

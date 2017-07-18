@@ -318,11 +318,12 @@ class Polynomial(Interp):
         # self._unpack_coefficients
         self.coeffs = coeffs
 
-    def _finish_write(self, fits, extname):
+    def _finish_write(self, fits, extname, logger):
         """Write the solution to a FITS binary table.
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension
+        :param logger:      A logger object for logging debug info.
         """
         if self.coeffs is None:
             raise RuntimeError("Coeffs not set yet.  Cannot write this Polynomial.")
@@ -369,11 +370,12 @@ class Polynomial(Interp):
         fits.write_table(data, extname=extname + '_solution', header=header)
 
 
-    def _finish_read(self, fits, extname):
+    def _finish_read(self, fits, extname, logger):
         """Read the solution from a fits file.
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension
+        :param logger:      A logger object for logging debug info.
         """
         # Read the solution extension.
         data = fits[extname + '_solution'].read()

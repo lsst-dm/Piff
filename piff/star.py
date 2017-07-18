@@ -249,12 +249,13 @@ class Star(object):
         return cls(data, fit)
 
     @classmethod
-    def write(self, stars, fits, extname):
+    def write(self, stars, fits, extname, logger=None):
         """Write a list of stars to a FITS file.
 
         :param stars:       A list of stars to write
         :param fits:        An open fitsio.FITS object
         :param extname:     The name of the extension to write to
+        :param logger:      A logger object for logging debug info.
         """
         import galsim
         # TODO This doesn't write everything out.  Probably want image as an optional I/O.
@@ -313,11 +314,12 @@ class Star(object):
         fits.write_table(data, extname=extname)
 
     @classmethod
-    def read(cls, fits, extname):
+    def read(cls, fits, extname, logger=None):
         """Read stars from a FITS file.
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The name of the extension to read from
+        :param logger:      A logger object for logging debug info.
 
         :returns: a list of Star instances
         """

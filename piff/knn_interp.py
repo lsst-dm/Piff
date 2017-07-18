@@ -150,13 +150,14 @@ class kNNInterp(Interp):
             star_list_fitted.append(Star(star.data, fit))
         return star_list_fitted
 
-    def _finish_write(self, fits, extname):
+    def _finish_write(self, fits, extname, logger=None):
         """Write the solution to a FITS binary table.
 
         Save the knn params and the locations and targets arrays
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension with the interp information.
+        :param logger:      A logger object for logging debug info.
         """
 
         dtypes = [('LOCATIONS', self.locations.dtype, self.locations.shape),
@@ -170,11 +171,12 @@ class kNNInterp(Interp):
         # write to fits
         fits.write_table(data, extname=extname + '_solution')
 
-    def _finish_read(self, fits, extname):
+    def _finish_read(self, fits, extname, logger=None):
         """Read the solution from a FITS binary table.
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension with the interp information.
+        :param logger:      A logger object for logging debug info.
         """
         data = fits[extname + '_solution'].read()
 

@@ -72,20 +72,21 @@ class Outliers(object):
         kwargs.update(config_outliers)
         return kwargs
 
-    def write(self, fits, extname):
+    def write(self, fits, extname, logger=None):
         """Write an Outliers to a FITS file.
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The name of the extension to write the outliers information.
+        :param logger:      A logger object for logging debug info.
         """
         # First write the basic kwargs that works for all Outliers classes
         outliers_type = self.__class__.__name__
         write_kwargs(fits, extname, dict(self.kwargs, type=outliers_type))
 
         # Now do any class-specific steps.
-        self._finish_write(fits, extname)
+        self._finish_write(fits, extname, logger)
 
-    def _finish_write(self, fits, extname):
+    def _finish_write(self, fits, extname, logger=None):
         """Finish the writing process with any class-specific steps.
 
         The base class implementation doesn't do anything, which is often appropriate, but
@@ -94,15 +95,17 @@ class Outliers(object):
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The base name of the extension
+        :param logger:      A logger object for logging debug info.
         """
         pass
 
     @classmethod
-    def read(cls, fits, extname):
+    def read(cls, fits, extname, logger=None):
         """Read a Outliers from a FITS file.
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The name of the extension with the outliers information.
+        :param logger:      A logger object for logging debug info.
 
         :returns: an Outliers handler
         """
@@ -124,10 +127,10 @@ class Outliers(object):
         kwargs = read_kwargs(fits, extname)
         kwargs.pop('type')
         outliers = outliers_cls(**kwargs)
-        outliers._finish_read(fits, extname)
+        outliers._finish_read(fits, extname, logger)
         return outliers
 
-    def _finish_read(self, fits, extname):
+    def _finish_read(self, fits, extname, logger):
         """Finish the reading process with any class-specific steps.
 
         The base class implementation doesn't do anything, which is often appropriate, but
@@ -136,6 +139,7 @@ class Outliers(object):
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension.
+        :param logger:      A logger object for logging debug info.
         """
         pass
 

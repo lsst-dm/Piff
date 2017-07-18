@@ -116,7 +116,7 @@ class Model(object):
         """
         raise NotImplemented("Derived classes must define the draw function")
 
-    def write(self, fits, extname):
+    def write(self, fits, extname, logger=None):
         """Write a Model to a FITS file.
 
         Note: this only writes the initialization kwargs to the fits extension, not the parameters.
@@ -126,15 +126,16 @@ class Model(object):
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The name of the extension to write the model information.
+        :param logger:      A logger object for logging debug info.
         """
         # First write the basic kwargs that works for all Model classes
         model_type = self.__class__.__name__
         write_kwargs(fits, extname, dict(self.kwargs, type=model_type))
 
         # Now do any class-specific steps.
-        self._finish_write(fits, extname)
+        self._finish_write(fits, extname, logger)
 
-    def _finish_write(self, fits, extname):
+    def _finish_write(self, fits, extname, logger=None):
         """Finish the writing process with any class-specific steps.
 
         The base class implementation doesn't do anything, which is often appropriate, but
@@ -143,11 +144,12 @@ class Model(object):
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The base name of the extension
+        :param logger:      A logger object for logging debug info.
         """
         pass
 
     @classmethod
-    def read(cls, fits, extname):
+    def read(cls, fits, extname, logger=None):
         """Read a Model from a FITS file.
 
         Note: the returned Model will not have its parameters set.  This just initializes a fresh
@@ -155,6 +157,7 @@ class Model(object):
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The name of the extension with the model information.
+        :param logger:      A logger object for logging debug info.
 
         :returns: a model built with a information in the FITS file.
         """
@@ -176,10 +179,10 @@ class Model(object):
         kwargs = read_kwargs(fits, extname)
         kwargs.pop('type')
         model = model_cls(**kwargs)
-        model._finish_read(fits, extname)
+        model._finish_read(fits, extname, logger)
         return model
 
-    def _finish_read(self, fits, extname):
+    def _finish_read(self, fits, extname, logger=None):
         """Finish the reading process with any class-specific steps.
 
         The base class implementation doesn't do anything, which is often appropriate, but
@@ -188,5 +191,6 @@ class Model(object):
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension.
+        :param logger:      A logger object for logging debug info.
         """
         pass

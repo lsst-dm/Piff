@@ -92,6 +92,15 @@ class OptAtmoPSF(PSF):
         # fit OpticalWavefrontPSF
         if logger:
             logger.info("Starting OpticalWavefrontPSF fit")
+
+        # Check if the constant atmosphere piece of the optical wavefront is
+        # turned off. Don't do anything if it is (might be intentional) but
+        # send a warning (it is unconventional).
+        if logger:
+            for key in ['r0', 'g1', 'g2']:
+                if not self.optpsf.fitter_kwargs['fix_' + key]:
+                    logger.warning("Warning! You have left {0} fixed. This parameter coarsely emulates the atmosphere (so that we can get near the correct location before we actually fit the atmosphere), so it is usually good to have on.".format(key))
+
         self.optpsf.fit(self.stars, wcs, pointing, logger=logger)
 
         # update stars from outlier rejection
@@ -205,6 +214,7 @@ class OptAtmoPSF(PSF):
         for psf_key in self.psf_keys:
             self.psfs.append(PSF._read(fits, extname + '_{0}'.format(psf_key), logger))
 
+        # TODO: because we have finished reading a presumably fitted model, make sure we have turned off the constant atmospheric piece used in the optical portion of the psf
 
 class OpticalWavefrontPSF(PSF):
     """A PSF class that uses the wavefront to model the PSF
@@ -685,3 +695,22 @@ class OpticalWavefrontPSF(PSF):
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
         return star.fit.params
+
+    def _finish_write(self, fits, extname, logger):
+        """Save the misalignment parameters
+
+        :param fits:        An open fitsio.FITS object
+        :param extname:     The base name of the extension to write to.
+        :param logger:      A logger object for logging debug info.
+        """
+        if self.fitter_kwargs is None:
+            raise RuntimeError("Misalignment not set yet. Cannot write this OpticalWavefrontPSF")
+
+    def _finish_read(self, fits, extname, logger):
+        """Read in misalignment parameters
+
+        :param fits:        An open fitsio.FITS object
+        :param extname:     The base name of the extension to write to.
+        :param logger:      A logger object for logging debug info.
+        """
+        pass

@@ -274,34 +274,34 @@ class SimplePSF(PSF):
         star = self.interp.interpolate(star)
         return star.fit.params
 
-    def _finish_write(self, fits, extname, logger):
+    def _finish_write(self, fits, extname, logger=None):
         """Finish the writing process with any class-specific steps.
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The base name of the extension to write to.
         :param logger:      A logger object for logging debug info.
         """
-        self.model.write(fits, extname + '_model')
+        self.model.write(fits, extname + '_model', logger)
         if logger:
             logger.debug("Wrote the PSF model to extension %s",extname + '_model')
-        self.interp.write(fits, extname + '_interp')
+        self.interp.write(fits, extname + '_interp', logger)
         if logger:
             logger.debug("Wrote the PSF interp to extension %s",extname + '_interp')
         if self.outliers:
-            self.outliers.write(fits, extname + '_outliers')
+            self.outliers.write(fits, extname + '_outliers', logger)
             if logger:
                 logger.debug("Wrote the PSF outliers to extension %s",extname + '_outliers')
 
-    def _finish_read(self, fits, extname, logger):
+    def _finish_read(self, fits, extname, logger=None):
         """Finish the reading process with any class-specific steps.
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The base name of the extension to write to.
         :param logger:      A logger object for logging debug info.
         """
-        self.model = Model.read(fits, extname + '_model')
-        self.interp = Interp.read(fits, extname + '_interp')
+        self.model = Model.read(fits, extname + '_model', logger)
+        self.interp = Interp.read(fits, extname + '_interp', logger)
         if extname + '_outliers' in fits:
-            self.outliers = Outliers.read(fits, extname + '_outliers')
+            self.outliers = Outliers.read(fits, extname + '_outliers', logger)
         else:
             self.outliers = None

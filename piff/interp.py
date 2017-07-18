@@ -143,7 +143,7 @@ class Interp(object):
         """
         return [ self.interpolate(star) for star in stars ]
 
-    def write(self, fits, extname):
+    def write(self, fits, extname, logger=None):
         """Write an Interp to a FITS file.
 
         Note: this only writes the initialization kwargs to the fits extension, not the parameters.
@@ -156,15 +156,16 @@ class Interp(object):
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The name of the extension to write the interpolator information.
+        :param logger:      A logger object for logging debug info.
         """
         # First write the basic kwargs that works for all Interp classes
         interp_type = self.__class__.__name__
         write_kwargs(fits, extname, dict(self.kwargs, type=interp_type))
 
         # Now do the class-specific steps.  Typically, this will write out the solution parameters.
-        self._finish_write(fits, extname)
+        self._finish_write(fits, extname, logger)
 
-    def _finish_write(self, fits, extname):
+    def _finish_write(self, fits, extname, logger=None):
         """Finish the writing process with any class-specific steps.
 
         The base class implementation doesn't do anything, but this will probably always be
@@ -172,15 +173,17 @@ class Interp(object):
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The base name of the extension
+        :param logger:      A logger object for logging debug info.
         """
         raise NotImplementedError("Derived classes must define the _finish_write method.")
 
     @classmethod
-    def read(cls, fits, extname):
+    def read(cls, fits, extname, logger=None):
         """Read an Interp from a FITS file.
 
         :param fits:        An open fitsio.FITS object
         :param extname:     The name of the extension with the interpolator information.
+        :param logger:      A logger object for logging debug info.
 
         :returns: an interpolator built with a information in the FITS file.
         """
@@ -204,10 +207,10 @@ class Interp(object):
         kwargs = read_kwargs(fits, extname)
         kwargs.pop('type')
         interp = interp_cls(**kwargs)
-        interp._finish_read(fits, extname)
+        interp._finish_read(fits, extname, logger)
         return interp
 
-    def _finish_read(self, fits, extname):
+    def _finish_read(self, fits, extname, logger=None):
         """Finish the reading process with any class-specific steps.
 
         The base class implementation doesn't do anything, but this will probably always be
@@ -215,5 +218,6 @@ class Interp(object):
 
         :param fits:        An open fitsio.FITS object.
         :param extname:     The base name of the extension.
+        :param logger:      A logger object for logging debug info.
         """
         raise NotImplementedError("Derived classes must define the _finish_read method.")
