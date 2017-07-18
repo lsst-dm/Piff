@@ -13,7 +13,7 @@
 #    and/or other materials provided with the distribution.
 
 """
-.. module:: sklearn_gp_interp
+.. module:: gp_interp
 """
 
 import numpy as np
@@ -218,19 +218,47 @@ class GPInterp(Interp):
             gp = self.gps[i]
             gp.kernel.theta = fit_theta[i]
             gp.optimizer = None
-        self._fit(self._X, self._Y)
-        for i in range(self.nparams):
-            gp = self.gps[i]
+            self._fit(gp, self._X, self._Y[:,i])
             gp.optimizer = self.gp_template.optimizer
             # Now that gp is setup, we can restore it's initial kernel.
             gp.kernel.theta = init_theta[i]
 
 
-class ExplicitKernel(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
+class FunctionKernel(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
     """ A kernel that wraps an arbitrary python function.
 
+    .. note::
+
+        This kernel is not serializable directly.  If you want a serializable kernel, you
+        should probably use ExplicitKernel instead.
+
+    :param  fn:     A Python function to use as the function of the difference in the properties.
+                    E.g. if the properties are (u,v), then fn(du,dv) should return the
+                    correlation at that separation.
+    """
+    def __init__(self, fn):
+        self._fn = fn
+        self.theta = []
+
+    def __call__(self, X, Y=None, eval_gradient=False):
+        if eval_gradient:
+            raise RuntimeError("Cannot evaluate gradient for ExplicitKernel.")
+
+        X = np.atleast_2d(X)
+        if Y is None:
+            Y = X
+
+        # Only writen for 2D covariance at the moment
+        xshift = np.subtract.outer(X[:,0], Y[:,0])
+        yshift = np.subtract.outer(X[:,1], Y[:,1])
+        return self._fn(xshift, yshift)
+
+
+class ExplicitKernel(FunctionKernel):
+    """ A kernel that wraps an arbitrary python function, input as a string.
+
     :param  fn:  String that can be combined with 'lambda du,dv:' to eval into a lambda expression.
-                 For example, fn="np.exp(-0.5*np.sqrt(du**2+dv**2)/0.1**2)" would make a Gaussian
+                 For example, fn="np.exp(-0.5*(du**2+dv**2)/0.1**2)" would make a Gaussian
                  kernel with scale length of 0.1.
     """
     def __init__(self, fn):
@@ -250,19 +278,6 @@ class ExplicitKernel(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
         import numpy
         import numpy as np
         return eval("lambda du,dv:" + fn)
-
-    def __call__(self, X, Y=None, eval_gradient=False):
-        if eval_gradient:
-            raise RuntimeError("Cannot evaluate gradient for ExplicitKernel.")
-
-        X = np.atleast_2d(X)
-        if Y is None:
-            Y = X
-
-        # Only writen for 2D covariance at the moment
-        xshift = np.subtract.outer(X[:,0], Y[:,0])
-        yshift = np.subtract.outer(X[:,1], Y[:,1])
-        return self._fn(xshift, yshift)
 
 
 class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
