@@ -33,10 +33,13 @@ class SimplePSF(PSF):
     The model defines the functional form of the surface brightness profile, and the
     interpolator defines how the parameters of the model vary across the field of view.
     """
-    def __init__(self, model, interp, outliers=None, extra_interp_properties=None):
+    def __init__(self, model, interp, initial_outliers=None, outliers=None,
+                 extra_interp_properties=None):
         """
         :param model:       A Model instance used for modeling the surface brightness profile.
         :param interp:      An Interp instance used to interpolate across the field of view.
+        :param initial_outliers  Optionally, an Outliers instance to be applied once before the
+                            interpolation step.  [default: None]
         :param outliers:    Optionally, an Outliers instance used to remove outliers.
                             [default: None]
         :param extra_interp_properties:     A list of any extra properties that will be used for
@@ -45,6 +48,7 @@ class SimplePSF(PSF):
         """
         self.model = model
         self.interp = interp
+        self.initial_outliers = initial_outliers
         self.outliers = outliers
         if extra_interp_properties is None:
             self.extra_interp_properties = []
@@ -56,6 +60,7 @@ class SimplePSF(PSF):
             #       in the _finish_read function.
             'model': 0,
             'interp': 0,
+            'initial_outliers': 0,
             'outliers': 0,
         }
 
@@ -85,6 +90,10 @@ class SimplePSF(PSF):
         # make an Interp object to use for the interpolation
         interp = piff.Interp.process(kwargs.pop('interp'), logger=logger)
         kwargs['interp'] = interp
+
+        if 'initial_outliers' in kwargs:
+            initial_outliers = piff.Outliers.process(kwargs.pop('initial_outliers'), logger=logger)
+            kwargs['initial_outliers'] = initial_outliers
 
         if 'outliers' in kwargs:
             outliers = piff.Outliers.process(kwargs.pop('outliers'), logger=logger)
@@ -162,6 +171,14 @@ class SimplePSF(PSF):
                     new_stars.append(new_star)
             self.stars = new_stars
 
+            if iteration == 0 and self.initial_outliers is not None:
+                logger.debug("Performing initial outlier rejection")
+                self.stars, nremoved_initial = self.initial_outliers.removeOutliers(
+                        self.stars, logger=logger)
+                if nremoved_initial > 0:
+                    logger.info(
+                        "Initial outlier rejection removed {} stars.".format(nremoved_initial))
+
             logger.debug("             Calculating the interpolation")
             self.interp.solve(self.stars, logger=logger)
 
@@ -236,6 +253,9 @@ class SimplePSF(PSF):
         logger.debug("Wrote the PSF model to extension %s",extname + '_model')
         self.interp.write(fits, extname + '_interp')
         logger.debug("Wrote the PSF interp to extension %s",extname + '_interp')
+        if self.initial_outliers:
+            self.initial_outliers.write(fits, extname + '_initial_outliers')
+            logger.debug("Wrote the initial outliers to extension %s",extname + '_initial_outliers')
         if self.outliers:
             self.outliers.write(fits, extname + '_outliers')
             logger.debug("Wrote the PSF outliers to extension %s",extname + '_outliers')
@@ -249,6 +269,10 @@ class SimplePSF(PSF):
         """
         self.model = Model.read(fits, extname + '_model')
         self.interp = Interp.read(fits, extname + '_interp')
+        if extname + '_initial_outliers' in fits:
+            self.initial_outliers = Outliers.read(fits, extname + '_initial_outliers')
+        else:
+            self.initial_outliers = None
         if extname + '_outliers' in fits:
             self.outliers = Outliers.read(fits, extname + '_outliers')
         else:

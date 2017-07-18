@@ -152,7 +152,7 @@ class MADOutliers(Outliers):
 
     where nmad is a parameter specified by the user.
 
-    The user can specify this parameter in one of two ways.  
+    The user can specify this parameter in one of two ways.
 
         1. The user can specify nmad directly.
         2. The user can specify nsigma, in which case nmad = sqrt(pi/2) nsigma, the equivalent
@@ -252,7 +252,7 @@ class ChisqOutliers(Outliers):
             return self.ndof * dof
         else:
             return chi2.isf(self.prob, dof)
-        
+
     def removeOutliers(self, stars, logger=None):
         """Remove outliers from a list of stars based on their chisq values.
 
@@ -305,7 +305,7 @@ class ChisqOutliers(Outliers):
         else:
             # Since the thresholds are not necessarily all equal, this might be tricky to
             # figure out which ones should be removed.
-            # e.g. if max_remove == 1 and we have items with 
+            # e.g. if max_remove == 1 and we have items with
             #    chisq = 20, thresh = 15
             #    chisq = 40, thresh = 32
             # which one should we remove?
@@ -326,3 +326,34 @@ class ChisqOutliers(Outliers):
         assert nremoved == len(stars) - len(good_stars)
         return good_stars, nremoved
 
+
+class ParamNSigmaOutliers(Outliers):
+    """Outliers handler that rejects stars if any of their fitted parameters exceed n-sigma of the
+    distribution of that parameter amongst all the stars.
+
+    :param nsigma:  Number of sigmas to use as rejection criterion.  [default: 4]
+    """
+    def __init__(self, nsigma=4):
+        self.nsigma = nsigma
+        self.kwargs = dict(nsigma=nsigma)
+
+    def removeOutliers(self, stars, logger=None):
+        """Remove outliers from a list of stars based on the empirical distribution of their
+        parameters.
+
+        :param stars:      A list of Star instances
+        :param logger:      A logger object for logging debug info. [default: None]
+
+        :returns: stars, nremoved   A new list of stars without outliers, and how many outliers
+                                    were removed.
+        """
+        keep = np.ones(len(stars), dtype=bool)
+        params = np.array([s.fit.params for s in stars])
+        means = np.mean(params, axis=0)
+        stds = np.std(params, axis=0)
+        for i in range(len(means)):
+            keep &= params[:, i] > means[i] - self.nsigma * stds[i]
+            keep &= params[:, i] < means[i] + self.nsigma * stds[i]
+        nremoved = len(keep) - sum(keep)
+        stars = [s for i, s in enumerate(stars) if keep[i]]
+        return stars, nremoved

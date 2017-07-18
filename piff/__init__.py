@@ -86,7 +86,7 @@ from .knn_interp import kNNInterp
 from .gp_interp import GPInterp, ExplicitKernel, AnisotropicRBF
 
 # Outlier handlers are named BlahOutliers where Blah is what they are called in teh config file
-from .outliers import Outliers, ChisqOutliers
+from .outliers import Outliers, ChisqOutliers, ParamNSigmaOutliers
 
 # Input handlers are named InputBlah where Blah is what they are called in the config file
 from .input import Input, InputFiles
