@@ -89,25 +89,14 @@ class GPInterp(Interp):
             raise RuntimeError("Failed to evaluate kernel string {0!r}".format(kernel))
         return k
 
-    def _fit(self, X, y, logger=None):
+    def _fit(self, gp, X, y):
         """Update the GaussianProcessRegressor with data
+
+        :param gp:  The GaussianProcessRegressor to update.
         :param X:   The independent covariates.  (n_samples, n_features)
-        :param y:   The dependent responses.  (n_samples, n_targets)
+        :param y:   The dependent responses.  (n_samples)
         """
-        # Save these for potential read/write.
-        self._X = X
-        self._y = y
-        if self.npca > 0:
-            from sklearn.decomposition import PCA
-            self._pca = PCA(n_components=self.npca, whiten=True)
-            self._pca.fit(y)
-            y = self._pca.transform(y)
-        for i in range(self.nparams):
-            gp = self.gps[i]
-            yy = y[:,i:i+1]
-            gp.fit(X, yy)
-            if logger:
-                logger.info('param %d: %s',i,gp.kernel_)
+        gp.fit(X, np.vstack(y))
 
     def _predict(self, Xstar):
         """ Predict responses given covariates.
@@ -144,15 +133,27 @@ class GPInterp(Interp):
         self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)]
         return stars
 
-    def solve(self, stars=None, logger=None):
-        """Set up this GPInterp object.
+    def solve(self, stars, logger=None):
+        """Solve for the GP interpolation.
 
         :param stars:    A list of Star instances to interpolate between
         :param logger:   A logger object for logging debug info. [default: None]
         """
         X = np.array([self.getProperties(star) for star in stars])
         y = np.array([star.fit.params for star in stars])
-        self._fit(X, y, logger=logger)
+        if self.npca > 0:
+            from sklearn.decomposition import PCA
+            self._pca = PCA(n_components=self.npca, whiten=True)
+            self._pca.fit(y)
+            y = self._pca.transform(y)
+        # Save these for potential read/write.
+        self._X = X
+        self._y = y
+        for i in range(self.nparams):
+            gp = self.gps[i]
+            self._fit(self.gps[i], X, y[:,i])
+            if logger:
+                logger.info('param %d: %s',i,gp.kernel_)
 
     def interpolate(self, star, logger=None):
         """Perform the interpolation to find the interpolated parameter vector at some position.
