@@ -37,6 +37,12 @@ class GPInterp(Interp):
                         custom piff AnisotropicRBF or ExplicitKernel object.  [default: 'RBF()']
     :param optimize:    Boolean indicating whether or not to try and optimize the kernel by
                         maximizing the marginal likelihood.  [default: True]
+    :param optimize_frac:  Optional fraction of stars to use during optimization of hyperparameters.
+                        Setting this below 1.0 may significantly speed up the optimization step of
+                        this code.  [default: 1.0]
+    :param n_restarts_optimizer:  Number of times to restart optimization to search for better
+                        hyperparameters.  See scikit-learn docs for more details.  Note that value
+                        of 0 implies one optimization iteration is performed.  [default: 0]
     :param npca:        Number of principal components to keep.  [default: 0, which means don't
                         decompose PSF parameters into principle components]
     :param normalize:   Whether to normalize the interpolation parameters to have a mean of 0.
@@ -45,12 +51,17 @@ class GPInterp(Interp):
                         then subtracting off the realized mean would be invalid.  [default: True]
     :param logger:      A logger object for logging debug info. [default: None]
     """
-    def __init__(self, keys=('u','v'), kernel='RBF()', optimize=True, npca=0, normalize=True,
-                 logger=None):
+    def __init__(self, keys=('u','v'), kernel='RBF()', optimize=True, optimize_frac=1.,
+                 n_restarts_optimizer=0, npca=0, normalize=True, logger=None):
         from sklearn.gaussian_process import GaussianProcessRegressor
+
+        if optimize_frac < 0 or optimize_frac > 1:
+            raise ValueError("optimize_frac must be between 0 and 1")
 
         self.keys = keys
         self.kernel = kernel
+        self.optimize_frac = optimize_frac
+        self.n_restarts_optimizer = n_restarts_optimizer
         self.npca = npca
         self.degenerate_points = False
 
@@ -58,11 +69,14 @@ class GPInterp(Interp):
             'keys': keys,
             'optimize': optimize,
             'npca': npca,
+            'optimize_frac': optimize_frac,
+            'n_restarts_optimizer': n_restarts_optimizer,
             'kernel': kernel
         }
         optimizer = 'fmin_l_bfgs_b' if optimize else None
         self.gp_template = GaussianProcessRegressor(
-                self._eval_kernel(self.kernel), optimizer=optimizer, normalize_y=normalize)
+                self._eval_kernel(self.kernel), optimizer=optimizer, normalize_y=normalize,
+                n_restarts_optimizer=self.n_restarts_optimizer)
 
     @staticmethod
     def _eval_kernel(kernel):
@@ -89,14 +103,33 @@ class GPInterp(Interp):
             raise RuntimeError("Failed to evaluate kernel string {0!r}".format(kernel))
         return k
 
-    def _fit(self, gp, X, y):
+    def _fit(self, gp, X, y, logger=None):
         """Update the GaussianProcessRegressor with data
 
         :param gp:  The GaussianProcessRegressor to update.
         :param X:   The independent covariates.  (n_samples, n_features)
         :param y:   The dependent responses.  (n_samples)
         """
-        gp.fit(X, np.vstack(y))
+        if gp.optimizer is not None and self.optimize_frac != 1:
+            nstar = len(y)
+            nchoose = int(nstar*self.optimize_frac)
+            if logger:
+                logger.info(
+                    "Fitting GP hyperparameters using {} of {} stars".format(nchoose, nstar))
+            choose = np.random.choice(nstar, nchoose, replace=False)
+            Xtrain = X[choose]
+            ytrain = y[choose]
+            gp.fit(Xtrain, np.vstack(ytrain))
+            init_kernel, fit_kernel = gp.kernel, gp.kernel_
+            # Temporarily disable optimization to install all stars
+            optimizer, gp.optimizer = gp.optimizer, None
+            gp.kernel = gp.kernel_
+            gp.fit(X, np.vstack(y))
+            assert gp.kernel_ == fit_kernel
+            gp.kernel = init_kernel
+            gp.optimizer = optimizer
+        else:
+            gp.fit(X, np.vstack(y))
 
     def _predict(self, Xstar):
         """ Predict responses given covariates.
@@ -151,7 +184,7 @@ class GPInterp(Interp):
         self._y = y
         for i in range(self.nparams):
             gp = self.gps[i]
-            self._fit(self.gps[i], X, y[:,i])
+            self._fit(self.gps[i], X, y[:,i], logger=logger)
             if logger:
                 logger.info('param %d: %s',i,gp.kernel_)
 

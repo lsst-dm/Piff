@@ -724,16 +724,21 @@ def test_guess():
     inferred_scale_length = []
     if __name__ == '__main__':
         guesses =  [0.03, 0.1, 0.3, 1.0, 3.0]
-        rtol = 0.02
+        rtol = 0.2
+        optimize_frac = 0.9
+        n_restarts_optimizer = 5
     else:
         guesses = [0.03, 0.3, 3.0]
         rtol = 0.03
+        optimize_frac = 0.8
+        n_restarts_optimizer = 0
     for guess in guesses:
         # noise of 0.3 turns out to be pretty significant here.
         stars = params_to_stars(training_data, noise=0.3, rng=rng)
         kernel = "1*RBF({0}, (1e-2, 1e1))".format(guess)
         kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
-        interp = piff.GPInterp(kernel=kernel)
+        interp = piff.GPInterp(kernel=kernel, optimize_frac=optimize_frac,
+                               n_restarts_optimizer=n_restarts_optimizer)
         stars = [mod.fit(s) for s in stars]
         stars = interp.initialize(stars)
         interp.solve(stars)
@@ -811,14 +816,14 @@ if __name__ == '__main__':
     # import cProfile, pstats
     # pr = cProfile.Profile()
     # pr.enable()
-    test_constant_psf()
-    test_polynomial_psf()
-    test_grf_psf()
-    test_anisotropic_rbf_kernel()
-    test_yaml()
-    test_anisotropic_limit()
+    # test_constant_psf()
+    # test_polynomial_psf()
+    # test_grf_psf()
+    # test_anisotropic_rbf_kernel()
+    # test_yaml()
+    # test_anisotropic_limit()
     test_guess()
-    test_anisotropic_guess()
+    # test_anisotropic_guess()
     # pr.disable()
     # ps = pstats.Stats(pr).sort_stats('tottime')
     # ps.print_stats(25)
