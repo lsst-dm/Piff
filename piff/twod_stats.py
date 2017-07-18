@@ -176,22 +176,17 @@ class TwoDHistStats(Stats):
         # make the colormaps
         logger.info("Creating TwoDHist colormaps")
         # T and T_model share colorbar
-        vmin__T = np.min([self.twodhists['T'], self.twodhists['T_model']])
-        vmax__T = np.max([self.twodhists['T'], self.twodhists['T_model']])
+        vmin__T, vmax__T = self._span(['T', 'T_model'])
         cmap__T = self._shift_cmap(vmin__T, vmax__T)
+
         # g1, g2, g1_model, g2_model share colorbar
-        vmin__g = np.min([self.twodhists['g1'], self.twodhists['g1_model'],
-                          self.twodhists['g2'], self.twodhists['g2_model']])
-        vmax__g = np.max([self.twodhists['g1'], self.twodhists['g1_model'],
-                          self.twodhists['g2'], self.twodhists['g2_model']])
+        vmin__g, vmax__g = self._span(['g1', 'g1_model', 'g2', 'g2_model'])
         cmap__g = self._shift_cmap(vmin__g, vmax__g)
         # dT gets own colorbar
-        vmin__dT = np.min(self.twodhists['dT'])
-        vmax__dT = np.max(self.twodhists['dT'])
+        vmin__dT, vmax__dT = self._span(['dT'])
         cmap__dT = self._shift_cmap(vmin__dT, vmax__dT)
         # dg1 and dg2 share a colorbar
-        vmin__dg = np.min([self.twodhists['dg1'], self.twodhists['dg2']])
-        vmax__dg = np.max([self.twodhists['dg1'], self.twodhists['dg2']])
+        vmin__dg, vmax__dg = self._span(['dg1', 'dg2'])
         cmap__dg = self._shift_cmap(vmin__dg, vmax__dg)
 
         # make the plots
@@ -269,6 +264,17 @@ class TwoDHistStats(Stats):
         fig.colorbar(IM, ax=ax)
 
         return fig, axs
+
+    def _span(self, keys):
+        arr = np.concatenate([
+            self.twodhists[k][~self.twodhists[k].mask]
+            for k in keys
+        ])
+        span = np.percentile(arr, [2.0, 98.0])
+        return (
+            span[0] - 0.2 * (span[1] - span[0]),
+            span[1] + 0.2 * (span[1] - span[0])
+        )
 
     def _array_to_2dhist(self, z, indx_u, indx_v, unique_indx):
         C = np.ma.zeros((self.number_bins_v, self.number_bins_u))
