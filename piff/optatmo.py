@@ -22,6 +22,8 @@ import numpy as np
 
 import galsim
 
+from .model import Model
+from .interp import Interp
 from .psf import PSF
 
 from .gsobject_model import Gaussian
@@ -123,6 +125,7 @@ class OptAtmoPSF(PSF):
         self.optpsf.fitter_kwargs['fix_g2'] = True
         # double plus sure we disable it
         self.optpsf.model.kolmogorov_kwargs = {}
+        self.optpsf.model.kwargs['r0'] = None
         self.optpsf.model.g1 = None
         self.optpsf.model.g2 = None
 
@@ -316,10 +319,13 @@ class OpticalWavefrontPSF(PSF):
                 'errordef': 0.5,  # guesstimated
                 })
         else:
-            raise NotImplementedError('fitter {0} not yet implmented!'.format(self.kwargs['fitter_algorithm']))
+            raise NotImplementedError('fitter {0} not implemented.'.format(self.kwargs['fitter_algorithm']))
 
         # update with user kwargs
         self.fitter_kwargs.update(fitter_kwargs)
+
+        # # put fitter_kwargs inside our kwargs, for better saving and loading
+        # self.kwargs['fitter_kwargs'] = self.fitter_kwargs  # edits to one will edit the other, since they point to the same object!
 
         # initialize the _misalignment_fix array to False so we can set initial values
         self._misalignment_fix = np.array([[False] * 3] * (11 - 4 + 1))
@@ -406,7 +412,7 @@ class OpticalWavefrontPSF(PSF):
         :param logger:          A logger object for logging debug info. [default: None]
         """
         if logger:
-            logger.warning("Start fitting OptAtmoPSF using %s stars", len(stars))
+            logger.warning("Start fitting OpticalWavefrontPSF using %s stars", len(stars))
         self.wcs = wcs
         self.pointing = pointing
         self.stars = stars
@@ -513,8 +519,10 @@ class OpticalWavefrontPSF(PSF):
         old_r0 = self.model.kolmogorov_kwargs['r0']
         old_g1 = self.model.g1
         old_g2 = self.model.g2
+        # TODO: should these ONLY be r0 == r0 nan checks? I am worried these won't get reset when I load. On the other hand, we also save the model and interp
         if not self.fitter_kwargs['fix_r0'] and r0 == r0:
             self.model.kolmogorov_kwargs['r0'] = r0
+            self.model.kwargs['r0'] = r0
         if not self.fitter_kwargs['fix_g1'] and g1 == g1:
             self.model.g1 = g1
         if not self.fitter_kwargs['fix_g2'] and g2 == g2:
@@ -703,8 +711,43 @@ class OpticalWavefrontPSF(PSF):
         :param extname:     The base name of the extension to write to.
         :param logger:      A logger object for logging debug info.
         """
-        if self.fitter_kwargs is None:
-            raise RuntimeError("Misalignment not set yet. Cannot write this OpticalWavefrontPSF")
+        # save relevant entries in fitter_kwargs -- value and errors
+        keys = ['r0', 'g1', 'g2']
+        for zi in range(4, 12):
+            for dxy in ['d', 'x', 'y']:
+                zkey = 'z{0:02d}{1}'.format(zi, dxy)
+                keys.append(zkey)
+        prefixes = ['', 'fix_', 'error_']
+        data_types = [float, bool, float]
+
+        # create dtype
+        dtypes = [('weights', '3f4')]
+        for key in keys:
+            for prefix, data_type in zip(prefixes, data_types):
+                combined_key = '{0}{1}'.format(prefix, key)
+                dtypes.append((combined_key, data_type))
+
+        data = np.zeros(1, dtype=dtypes)
+        data['weights'][0] = self.weights
+        for key in keys:
+            for prefix in prefixes:
+                combined_key = '{0}{1}'.format(prefix, key)
+                data[combined_key][0] = self.fitter_kwargs[combined_key]
+
+        fits.write_table(data, extname=extname + '_solution')
+
+        # now save model and interp like a simplepsf
+        # for the model, make sure the r0 and g1 and g2 and sigma are set in kwargs
+        self.model.kwargs['sigma'] = self.model.sigma
+        self.model.kwargs['g1'] = self.model.g1
+        self.model.kwargs['g2'] = self.model.g2
+        self.model.kwargs['r0'] = self.model.kolmogorov_kwargs['r0']
+        self.model.write(fits, extname + '_model', logger)
+        if logger:
+            logger.debug("Wrote the PSF model to extension %s",extname + '_model')
+        self.interp.write(fits, extname + '_interp', logger)
+        if logger:
+            logger.debug("Wrote the PSF interp to extension %s",extname + '_interp')
 
     def _finish_read(self, fits, extname, logger):
         """Read in misalignment parameters
@@ -713,4 +756,35 @@ class OpticalWavefrontPSF(PSF):
         :param extname:     The base name of the extension to write to.
         :param logger:      A logger object for logging debug info.
         """
-        pass
+        # load relevant entries in fitter_kwargs
+        # load weights
+        data = fits[extname + '_solution'].read()
+        self.weights = data['weights'][0]
+
+        # load fitter_kwargs
+        keys = ['r0', 'g1', 'g2']
+        for zi in range(4, 12):
+            for dxy in ['d', 'x', 'y']:
+                zkey = 'z{0:02d}{1}'.format(zi, dxy)
+                keys.append(zkey)
+        prefixes = ['', 'fix_', 'error_']
+        for key in keys:
+            for prefix in prefixes:
+                combined_key = '{0}{1}'.format(prefix, key)
+                self.fitter_kwargs[combined_key] = data[combined_key][0]
+
+        # do the awkward misalignment stuff
+        # initialize the _misalignment_fix array to False so we can set initial values
+        self._misalignment_fix = np.array([[False] * 3] * (11 - 4 + 1))
+        self._update_psf_params(**self.fitter_kwargs)
+
+        # now set the _misalignment_fix array to the fixed terms based on the fitter_kwargs
+        self._misalignment_fix = np.array([[self.fitter_kwargs['fix_z{0:02d}{1}'.format(zi, dxy)]
+                                            for dxy in ['d', 'x', 'y']]
+                                            for zi in range(4, 12)])
+
+        self._time = time()
+
+        # load model and interp
+        self.model = Model.read(fits, extname + '_model', logger)
+        self.interp = Interp.read(fits, extname + '_interp', logger)

@@ -105,7 +105,7 @@ def create_fit_dict():
             },
 
         'atmopsf': {
-            'type': 'SingleChip',
+            'type': 'Simple',
 
             'model': {
                 'type': 'Gaussian',
@@ -166,16 +166,13 @@ def create_synthetic_optatmo(fit_dict, misalignment={'z04d': -0.5, 'r0': 0.1, 'g
     star_list = []
     wcs_field = {}
     for chipnum in chipnums:
+        # OK let us try makeTarget instead
+        # wcs = galsim.AffineTransform(0, -0.26, -0.26, 0, world_origin=galsim.PositionD(0,0))
         wcs = decaminfo.get_nominal_wcs(chipnum)
         wcs_field[chipnum] = wcs
         icen = np_rng.randint(100, 2048) * 1.
         jcen = np_rng.randint(100, 4096) * 1.
-        image_pos = galsim.PositionD(icen, jcen)
-        image = galsim.Image(64,64, wcs=wcs)
-        image.setCenter(33, 33)
-
-        stardata = piff.StarData(image, image_pos, properties={'chipnum': chipnum})
-        star = piff.Star(stardata, None)
+        star = piff.Star.makeTarget(x=icen, y=jcen, wcs=wcs, stamp_size=64, properties={'chipnum': chipnum})
 
         star_list.append(star)
 
@@ -268,7 +265,7 @@ def test_optical_fit():
     fit_dict = create_fit_dict()
     # test that we can generate stars
     misalignment = {'z04d': -0.5, 'z05d': 0.1}#, 'r0': 0.1, 'g1': 0.02, 'g2': -0.05}
-    stars, stars_clean, psf, wcs, pointing = create_synthetic_optatmo(fit_dict, misalignment=misalignment, n_samples=100, logger=logger)
+    stars, stars_clean, psf, wcs, pointing = create_synthetic_optatmo(fit_dict, misalignment=misalignment, n_samples=1000, logger=logger)
     optpsf = psf.optpsf
 
     # run fit
@@ -301,7 +298,105 @@ def test_optical_fit():
     np.testing.assert_allclose(shape_raw[0], shape_raw[2], rtol=0, atol=1e-3)
 
 
+    # TEMPORARY: write code to make plots of u, v and make sure that works
+
+@timer
+def test_disk():
+    # test saving and loading
+    if __name__ == '__main__':
+        logger = piff.config.setup_logger(verbose=3)
+    else:
+        logger = None
+
+    # make dictionary
+    fit_dict = create_fit_dict()
+    # test that we can generate stars
+    misalignment = {'z04d': -0.5, 'r0': 0.1, 'g1': 0.02, 'g2': -0.05}
+    # only take one ncall
+    fit_dict['psf']['optpsf']['max_iterations'] = 1
+    stars, stars_clean, psf, wcs, pointing = create_synthetic_optatmo(fit_dict, misalignment=misalignment, n_samples=2, logger=logger)
+    optpsf = psf.optpsf
+    optpsf.fit(stars_clean, wcs, pointing, logger=logger)
+
+    optpsf_file = os.path.join('output', 'opticalwavefront.piff')
+    optpsf.write(optpsf_file)
+    optpsf_disk = piff.read(optpsf_file)
+
+    # fitter_kwargs
+    for key in optpsf_disk.fitter_kwargs:
+        assert optpsf_disk.fitter_kwargs[key] == optpsf.fitter_kwargs[key], "Failture on saving and loading optical wavefront psf key {0}".format(key)
+
+    # _misalignment_fix
+    np.testing.assert_array_equal(optpsf._misalignment_fix, optpsf_disk._misalignment_fix, "Array fixing misalignment fails saving and loading.")
+
+    # interp.misalignment
+    np.testing.assert_array_equal(optpsf.interp.misalignment, optpsf_disk.interp.misalignment, "DECam interp misalignment fails saving and loading")
+
+    # model.kolmogorov_kwargs
+    for key in optpsf_disk.model.kolmogorov_kwargs:
+        assert optpsf_disk.model.kolmogorov_kwargs[key] == optpsf.model.kolmogorov_kwargs[key], "Failture on saving and loading optical wavefront optical key {0}".format(key)
+
+    # model.g1, model.g2
+    assert optpsf_disk.model.g1 == optpsf.model.g1, "Failture on saving and loading optical wavefront optical g1"
+    assert optpsf_disk.model.g2 == optpsf.model.g2, "Failture on saving and loading optical wavefront optical g2"
+
+    # check fit params
+    star = optpsf.stars[0]
+    # first check decaminfo
+    properties = optpsf.decaminfo.pixel_to_focal(star.copy()).data.properties
+    properties_disk = optpsf_disk.decaminfo.pixel_to_focal(star.copy()).data.properties
+    for key in ['focal_x', 'focal_y']:
+        assert properties[key] == properties_disk[key], "{0} not close in saving and loading optical wavefront".format(key)
+
+    # now check interpolation
+    params = optpsf.interp.interpolate(star.copy()).fit.params
+    params_disk = optpsf_disk.interp.interpolate(star.copy()).fit.params
+    np.testing.assert_array_equal(params, params_disk, "Interpolation failed for saving and loading optical wavefront")
+
+    # repeat task for List
+    properties = optpsf.decaminfo.pixel_to_focalList([star.copy()])[0].data.properties
+    properties_disk = optpsf_disk.decaminfo.pixel_to_focalList([star.copy()])[0].data.properties
+    for key in ['focal_x', 'focal_y']:
+        assert properties[key] == properties_disk[key], "{0} not close in saving and loading optical wavefront".format(key)
+    params = optpsf.interp.interpolateList([star.copy()])[0].fit.params
+    params_disk = optpsf_disk.interp.interpolateList([star.copy()])[0].fit.params
+    np.testing.assert_array_equal(params, params_disk, "Interpolation failed for saving and loading optical wavefront")
+
+    # and for getParams
+    params = optpsf.getParams(star.copy())
+    params_disk = optpsf_disk.getParams(star.copy())
+    np.testing.assert_array_equal(params, params_disk, "Interpolation failed for saving and loading optical wavefront")
+
+    # check getProfile
+    profile = optpsf.getProfile(star.copy())
+    profile_disk = optpsf_disk.getProfile(star.copy())
+    assert profile == profile_disk, "failure matching profiles when saving and loading"
+
+    # check shapes
+    star_drawn = optpsf.drawStar(star.copy())
+    # use the same star but different psf
+    star_disk = optpsf_disk.drawStar(star.copy())
+    # compare shape
+    shape = optpsf._measure_shapes([star_drawn])[0]
+    shape_disk = optpsf_disk._measure_shapes([star_disk])[0]
+    np.testing.assert_array_equal(shape, shape_disk, "Failure on measured shapes of stars on saving and loading optical wavefront")
+
+    # compare array
+    assert star_drawn.image == star_disk.image, "Failure of drawn images"
+
+    # TODO: requires making psf images
+    # repeat for psf that has been fitted
+
+    # save
+
+    # load
+
+    # check stuff
+
+    # make sure the optpsf portion has turned off the atmosphere
+
 if __name__ == '__main__':
+    test_disk()
     test_optical_fit()
-    test_fit()
-    test_yaml()
+    # test_fit()
+    # test_yaml()
