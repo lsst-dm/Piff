@@ -524,6 +524,8 @@ class Star(object):
         # So just pass this task on to that and recast the return value as a Star instance.
         return Star(self.data.addPoisson(signal=signal, gain=gain), self.fit)
 
+    def copy(self):
+        return Star(self.data.copy(), self.fit.copy())
 
 class StarData(object):
     """A class that encapsulates all the relevant information about an observed star.
