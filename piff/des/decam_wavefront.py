@@ -156,7 +156,7 @@ class DECamWavefront(kNNInterp):
 
         return targets
 
-    def _finish_write(self, fits, extname):
+    def _finish_write(self, fits, extname, logger=None):
         """Write the solution to a FITS binary table.
 
         Save the knn params and the locations and targets arrays
@@ -179,7 +179,7 @@ class DECamWavefront(kNNInterp):
         # write to fits
         fits.write_table(data, extname=extname + '_solution')
 
-    def _finish_read(self, fits, extname):
+    def _finish_read(self, fits, extname, logger=None):
         """Read the solution from a FITS binary table.
 
         :param fits:        An open fitsio.FITS object.
