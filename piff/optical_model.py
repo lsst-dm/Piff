@@ -145,15 +145,17 @@ class Optical(Model):
         # Deal with the pupil plane image now so it only needs to be loaded from disk once.
         if 'pupil_plane_im' in kwargs:
             pupil_plane_im = kwargs.pop('pupil_plane_im')
-            if isinstance(pupil_plane_im, str):
-                if logger:
-                    logger.debug('Loading pupil_plane_im from {0}'.format(pupil_plane_im))
-                pupil_plane_im = galsim.fits.read(pupil_plane_im)
-            self.optical_psf_kwargs['pupil_plane_im'] = pupil_plane_im
-            # also need to cut several kwargs from optical_psf_kwargs if we have pupil_plane_im
-            pupil_plane_conflict_keys = ('circular_pupil', 'nstruts', 'strut_thick', 'strut_angle')
-            for key in pupil_plane_conflict_keys:
-                self.optical_psf_kwargs.pop(key, None)
+            # make sure it isn't just None
+            if pupil_plane_im is not None:
+                if isinstance(pupil_plane_im, str):
+                    if logger:
+                        logger.debug('Loading pupil_plane_im from {0}'.format(pupil_plane_im))
+                    pupil_plane_im = galsim.fits.read(pupil_plane_im)
+                self.optical_psf_kwargs['pupil_plane_im'] = pupil_plane_im
+                # also need to cut several kwargs from optical_psf_kwargs if we have pupil_plane_im
+                pupil_plane_conflict_keys = ('circular_pupil', 'nstruts', 'strut_thick', 'strut_angle')
+                for key in pupil_plane_conflict_keys:
+                    self.optical_psf_kwargs.pop(key, None)
 
         kolmogorov_keys = ('lam', 'r0', 'lam_over_r0', 'scale_unit',
                            'fwhm', 'half_light_radius', 'r0_500')
@@ -272,3 +274,46 @@ class Optical(Model):
                         values_are_sb=star.data.values_are_sb,
                         properties=properties)
         return Star(data, star.fit)
+
+    def _finish_write(self, fits, extname, logger):
+        """Finish the writing process with any class-specific steps.
+
+        :param fits:        An open fitsio.FITS object
+        :param extname:     The base name of the extension to write to.
+        :param logger:      A logger object for logging debug info.
+        """
+        # create gsparams attribute
+        gsparams_dict = {
+            'minimum_fft_size': np.array([self.gsparams.minimum_fft_size]),
+            'maximum_fft_size': np.array([self.gsparams.maximum_fft_size]),
+            'folding_threshold': np.array([self.gsparams.folding_threshold]),
+            'stepk_minimum_hlr': np.array([self.gsparams.stepk_minimum_hlr]),
+            'maxk_threshold': np.array([self.gsparams.maxk_threshold]),
+            'kvalue_accuracy': np.array([self.gsparams.kvalue_accuracy]),
+            'xvalue_accuracy': np.array([self.gsparams.xvalue_accuracy]),
+            'table_spacing': np.array([self.gsparams.table_spacing]),
+            'realspace_relerr': np.array([self.gsparams.realspace_relerr]),
+            'realspace_abserr': np.array([self.gsparams.realspace_abserr]),
+            'integration_relerr': np.array([self.gsparams.integration_relerr]),
+            'integration_abserr': np.array([self.gsparams.integration_abserr]),
+            'shoot_accuracy': np.array([self.gsparams.shoot_accuracy]),
+            'allowed_flux_variation': np.array([self.gsparams.allowed_flux_variation]),
+            'range_division_for_extrema': np.array([self.gsparams.range_division_for_extrema]),
+            'small_fraction_of_flux': np.array([self.gsparams.small_fraction_of_flux]),
+            }
+
+        # write gsparams data array
+        fits.write(gsparams_dict, extname=extname + '_gsparams')
+
+    def _finish_read(self, fits, extname, logger):
+        """Finish the reading process with any class-specific steps.
+
+        :param fits:        An open fitsio.FITS object
+        :param extname:     The base name of the extension to write to.
+        :param logger:      A logger object for logging debug info.
+        """
+        # read gsparams
+        gsparams_arr = fits[extname + '_gsparams'].read()
+        gsparams_dict = {name: gsparams_arr[name][0] for name in gsparams_arr.dtype.names}
+        # set gsparams
+        self.gsparams = galsim.GSParams(**gsparams_dict)

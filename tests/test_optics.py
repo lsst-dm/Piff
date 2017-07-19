@@ -18,6 +18,8 @@ import piff
 import os
 import fitsio
 
+import galsim
+
 from piff_test_helper import timer
 
 
@@ -133,7 +135,9 @@ def test_disk():
     sigma = 1.2
     g1 = -0.1
     g2 = 0.05
-    model = piff.Optical(r0=r0, sigma=sigma, g1=g1, g2=g2, lam=700.0, template='des')
+    gsparams = galsim.GSParams(minimum_fft_size=32)
+    model = piff.Optical(r0=r0, sigma=sigma, g1=g1, g2=g2, lam=700.0, template='des',
+                         pad_factor=0.5, oversampling=0.5, gsparams=gsparams)
     model_file = os.path.join('output','optics.fits')
     with fitsio.FITS(model_file, 'rw', clobber=True) as f:
         model.write(f, 'optics')
@@ -151,6 +155,9 @@ def test_disk():
     assert model.sigma == model2.sigma,'sigma mismatch'
     assert model.g1 == model2.g1,'g1 mismatch'
     assert model.g2 == model2.g2,'g2 mismatch'
+
+    # check gsparams
+    assert model.gsparams == model2.gsparams,'gsparams mismatch'
 
 #####
 # convenience functions
