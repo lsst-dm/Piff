@@ -70,3 +70,7 @@ target/
 # for instructions about how to set this up.  (Although now that it's been set up once,
 # just do `git checkout gh-pages` in that directory, not --orphan.)
 gh-pages
+
+# ignore y1_test in case you download it so you don't accidentally push it
+tests/y1_test*
+!tests/y1_test.readme
