@@ -324,9 +324,6 @@ class OpticalWavefrontPSF(PSF):
         # update with user kwargs
         self.fitter_kwargs.update(fitter_kwargs)
 
-        # # put fitter_kwargs inside our kwargs, for better saving and loading
-        # self.kwargs['fitter_kwargs'] = self.fitter_kwargs  # edits to one will edit the other, since they point to the same object!
-
         # initialize the _misalignment_fix array to False so we can set initial values
         self._misalignment_fix = np.array([[False] * 3] * (11 - 4 + 1))
         self._update_psf_params(**self.fitter_kwargs)
