@@ -335,7 +335,9 @@ class Star(object):
         for key in ['x', 'y', 'u', 'v',
                     'dudx', 'dudy', 'dvdx', 'dvdy',
                     'xmin', 'xmax', 'ymin', 'ymax',
-                    'flux', 'center', 'chisq']:
+                    'flux', 'center', 'chisq',
+                    'origin_x', 'origin_y',
+                    'world_origin_x', 'world_origin_y']:
             assert key in colnames
             colnames.remove(key)
 
@@ -617,7 +619,10 @@ class StarData(object):
         self.image_pos = image_pos
         self.values_are_sb = values_are_sb
         # Make sure we have a local wcs in case the provided image is more complex.
-        self.affine_wcs = image.wcs.jacobian(image_pos).withOrigin(image.wcs.origin, image.wcs.world_origin)
+        try:
+            self.affine_wcs = image.wcs.jacobian(image_pos).withOrigin(image.wcs.origin, image.wcs.world_origin)
+        except AttributeError:
+            self.affine_wcs = image.wcs.jacobian(image_pos)
 
 
         if weight is None:
