@@ -67,11 +67,11 @@ class GPInterp(Interp):
 
         self.kwargs = {
             'keys': keys,
+            'kernel': kernel,
             'optimize': optimize,
-            'npca': npca,
             'optimize_frac': optimize_frac,
             'n_restarts_optimizer': n_restarts_optimizer,
-            'kernel': kernel
+            'npca': npca,
         }
         optimizer = 'fmin_l_bfgs_b' if optimize else None
         self.gp_template = GaussianProcessRegressor(
@@ -106,10 +106,14 @@ class GPInterp(Interp):
     def _fit(self, gp, X, y, logger=None):
         """Update the GaussianProcessRegressor with data
 
-        :param gp:  The GaussianProcessRegressor to update.
-        :param X:   The independent covariates.  (n_samples, n_features)
-        :param y:   The dependent responses.  (n_samples)
+        :param gp:      The GaussianProcessRegressor to update.
+        :param X:       The independent covariates.  (n_samples, n_features)
+        :param y:       The dependent responses.  (n_samples)
+        :param logger:  A logger object for logging debug info. [default: None]
         """
+        if logger:
+            logger.debug('Start GPInterp _fit: %s',gp.kernel)
+            logger.debug('gp.fit with mean y = %s',np.mean(y))
         if gp.optimizer is not None and self.optimize_frac != 1:
             nstar = len(y)
             nchoose = int(nstar*self.optimize_frac)
@@ -130,6 +134,8 @@ class GPInterp(Interp):
             gp.optimizer = optimizer
         else:
             gp.fit(X, np.vstack(y))
+        if logger:
+            logger.debug('After fit: kernel = %s',gp.kernel_)
 
     def _predict(self, Xstar):
         """ Predict responses given covariates.
@@ -174,12 +180,16 @@ class GPInterp(Interp):
         """
         X = np.array([self.getProperties(star) for star in stars])
         y = np.array([star.fit.params for star in stars])
+        if logger:
+            logger.debug('Start solve: y = %s',y)
         if self.npca > 0:
             from sklearn.decomposition import PCA
             self._pca = PCA(n_components=self.npca, whiten=True)
             self._pca.fit(y)
             y = self._pca.transform(y)
-        # Save these for potential read/write.
+        if logger:
+            logger.debug('After npca: y = %s',y)
+        # Save these so serialization can reinstall them into gp.
         self._X = X
         self._y = y
         for i in range(self.nparams):
@@ -209,6 +219,9 @@ class GPInterp(Interp):
         """
         Xstar = np.array([self.getProperties(star) for star in stars])
         y = self._predict(Xstar)
+        if logger:
+            logger.debug('star properties = %s',Xstar)
+            logger.debug('interpolated params = ',y)
         fitted_stars = []
         for y0, star in zip(y, stars):
             if star.fit is None:
@@ -245,14 +258,14 @@ class GPInterp(Interp):
         init_theta = np.atleast_1d(data['INIT_THETA'][0])
         fit_theta = np.atleast_1d(data['FIT_THETA'][0])
         self._X = np.atleast_1d(data['X'][0])
-        self._Y = np.atleast_1d(data['Y'][0])
+        self._y = np.atleast_1d(data['Y'][0])
         self.nparams = len(init_theta)
         self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)]
         for i in range(self.nparams):
             gp = self.gps[i]
             gp.kernel.theta = fit_theta[i]
             gp.optimizer = None
-            self._fit(gp, self._X, self._Y[:,i])
+            self._fit(gp, self._X, self._y[:,i])
             gp.optimizer = self.gp_template.optimizer
             # Now that gp is setup, we can restore it's initial kernel.
             gp.kernel.theta = init_theta[i]
@@ -271,12 +284,11 @@ class FunctionKernel(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
                     correlation at that separation.
     """
     def __init__(self, fn):
+        self.fn = fn
         self._fn = fn
         self.theta = []
 
     def __call__(self, X, Y=None, eval_gradient=False):
-        if eval_gradient:
-            raise RuntimeError("Cannot evaluate gradient for ExplicitKernel.")
 
         X = np.atleast_2d(X)
         if Y is None:
@@ -285,7 +297,15 @@ class FunctionKernel(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
         # Only writen for 2D covariance at the moment
         xshift = np.subtract.outer(X[:,0], Y[:,0])
         yshift = np.subtract.outer(X[:,1], Y[:,1])
-        return self._fn(xshift, yshift)
+
+        k = self._fn(xshift, yshift)
+
+        if eval_gradient:
+            # We don't have any hyper-parameters, so just return an empty array with 0 length
+            # in the 3rd dimension
+            return k, np.empty(k.shape + (0,))
+        else:
+            return k
 
 
 class ExplicitKernel(FunctionKernel):

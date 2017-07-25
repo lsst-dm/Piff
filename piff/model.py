@@ -99,20 +99,21 @@ class Model(object):
         The returned star.fit.alpha will be inverse covariance of solution if
         it is estimated, else is None.
 
-        :param star:   A Star instance
+        :param star:    A Star instance
 
-        :returns:      New Star instance with updated fit information
+        :returns:       New Star instance with updated fit information
         """
         raise NotImplementedError("Derived classes must define the fit function")
 
-    def draw(self, star):
+    def draw(self, star, logger=None):
         """Create new Star instance that has star.data filled with a rendering
         of the PSF specified by the current StarFit parameters, flux, and center.
         Coordinate mapping of the current StarData is assumed.
 
-        :param star:   A Star instance
+        :param star:    A Star instance
+        :param logger:  A logger object for logging debug info. [default: None]
 
-        :returns:      New Star instance with rendered PSF in StarData
+        :returns:       New Star instance with rendered PSF in StarData
         """
         raise NotImplementedError("Derived classes must define the draw function")
 

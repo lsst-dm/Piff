@@ -189,11 +189,12 @@ class SimplePSF(PSF):
                 new_stars = []
                 for s in self.stars:
                     # Update the noise with the new interpolated signal.
-                    signal = self.drawStar(s)
+                    signal = self.drawStar(s, logger=logger)
                     s = s.addPoisson(signal)
 
                     try:
-                        new_star = self.model.reflux(self.interp.interpolate(s),logger=logger)
+                        new_star = self.model.reflux(self.interp.interpolate(s,logger=logger),
+                                                     logger=logger)
                     except (KeyboardInterrupt, SystemExit):
                         raise
                     except:
@@ -228,18 +229,19 @@ class SimplePSF(PSF):
         logger.warning("PSF fit did not converge.  Max iterations = %d reached.",max_iterations)
 
 
-    def drawStar(self, star):
+    def drawStar(self, star, logger=None):
         """Generate PSF image for a given star.
 
         :param star:        Star instance holding information needed for interpolation as
                             well as an image/WCS into which PSF will be rendered.
+        :param logger:      A logger object for logging debug info. [default: None]
 
         :returns:           Star instance with its image filled with rendered PSF
         """
         # Interpolate parameters to this position/properties:
-        star = self.interp.interpolate(star)
+        star = self.interp.interpolate(star, logger=logger)
         # Render the image
-        return self.model.draw(star)
+        return self.model.draw(star,logger)
 
     def _finish_write(self, fits, extname, logger):
         """Finish the writing process with any class-specific steps.

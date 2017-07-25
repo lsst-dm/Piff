@@ -516,14 +516,15 @@ class PixelGrid(Model):
 
         return Star(star.data, outfit)
 
-    def draw(self, star):
+    def draw(self, star, logger=None):
         """Create new Star instance that has StarData filled with a rendering
         of the PSF specified by the current StarFit parameters, flux, and center.
         Coordinate mapping of the current StarData is assumed.
 
-        :param star:   A Star instance
+        :param star:    A Star instance
+        :param logger:  A logger object for logging debug info. [default: None]
 
-        :returns:      New Star instance with rendered PSF in StarData
+        :returns:       New Star instance with rendered PSF in StarData
         """
         # Start by getting all interpolation coefficients for all observed points
         data, weight, u, v = star.data.getDataVector(include_zero_weight=True)

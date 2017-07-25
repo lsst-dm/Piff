@@ -66,7 +66,7 @@ class GSObjectModel(Model):
         flux, cenu, cenv, size, g1, g2 = star.data.properties['hsm']
         shape = galsim.Shear(g1=g1, g2=g2)
 
-        ref_flux, ref_cenu, ref_cenv, ref_size, ref_g1, ref_g2, flag = hsm(self.draw(star))
+        ref_flux, ref_cenu, ref_cenv, ref_size, ref_g1, ref_g2, flag = hsm(self.draw(star,logger))
         ref_shape = galsim.Shear(g1=ref_g1, g2=ref_g2)
         if flag:
             raise ModelFitError("Error calculating model moments for this star.")
@@ -106,15 +106,18 @@ class GSObjectModel(Model):
             du, dv, scale, g1, g2 = params
         return self.gsobj.dilate(scale).shear(g1=g1, g2=g2).shift(du, dv)
 
-    def draw(self, star):
+    def draw(self, star, logger=None):
         """Draw the model on the given image.
 
         :param star:    A Star instance with the fitted parameters to use for drawing and a
                         data field that acts as a template image for the drawn model.
+        :param logger:  A logger object for logging debug info. [default: None]
 
         :returns: a new Star instance with the data field having an image of the drawn model.
         """
         prof = self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        if logger:
+            logger.debug('prof = %s',prof)
         image = star.image.copy()
         prof.drawImage(image, method=self._method, offset=(star.image_pos-image.trueCenter()))
         data = StarData(image, star.image_pos, star.weight, star.data.pointing)
@@ -331,7 +334,7 @@ class GSObjectModel(Model):
                                            beta = star.fit.beta))
         else:
             image, weight, image_pos = star.data.getImage()
-            model_image = self.draw(star).image
+            model_image = self.draw(star,logger).image
             flux_ratio = (np.sum(weight.array * image.array * model_image.array)
                           / np.sum(weight.array * model_image.array**2))
             new_chisq = np.sum(weight.array * (image.array - flux_ratio*model_image.array)**2)
