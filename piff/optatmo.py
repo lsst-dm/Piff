@@ -314,14 +314,7 @@ class OpticalWavefrontPSF(PSF):
         # update with user kwargs
         self.fitter_kwargs.update(fitter_kwargs)
 
-        # initialize the _misalignment_fix array to False so we can set initial values
-        self._misalignment_fix = np.array([[False] * 3] * (11 - 4 + 1))
         self._update_psf_params(**self.fitter_kwargs)
-
-        # now set the _misalignment_fix array to the fixed terms based on the fitter_kwargs
-        self._misalignment_fix = np.array([[self.fitter_kwargs['fix_z{0:02d}{1}'.format(zi, dxy)]
-                                            for dxy in ['d', 'x', 'y']]
-                                            for zi in range(4, 12)])
 
         self._time = time()
 
@@ -330,9 +323,6 @@ class OpticalWavefrontPSF(PSF):
         if logger:
             logger.info("Disabling atmosphere in OpticalWavefrontPSF")
         self._update_psf_params(r0=None, g1=None, g2=None)
-        self.fitter_kwargs['fix_r0'] = True
-        self.fitter_kwargs['fix_g1'] = True
-        self.fitter_kwargs['fix_g2'] = True
         # double plus sure we disable it
         for key in self.model.required_kolmogorov_kwargs:
             if key in self.model.kolmogorov_kwargs:
@@ -522,7 +512,6 @@ class OpticalWavefrontPSF(PSF):
         # results = lmfit.minimize(resid_func, params, args)
         raise NotImplementedError("lmfit not currently implemented")
 
-    # TODO: you should be able to update psf params regardless of the "fixed" kwarg. Fixing should only matter to the fitter, not to updating the params!
     def _update_psf_params(self,
                            r0=np.nan, g1=np.nan, g2=np.nan,
                            z04d=np.nan, z04x=np.nan, z04y=np.nan,
@@ -539,15 +528,15 @@ class OpticalWavefrontPSF(PSF):
         old_g1 = self.model.g1
         old_g2 = self.model.g2
         # TODO: should these ONLY be r0 == r0 nan checks? I am worried these won't get reset when I load. On the other hand, we also save the model and interp
-        if not self.fitter_kwargs['fix_r0'] and r0 == r0:
+        if r0 == r0:
             self.model.kolmogorov_kwargs['r0'] = r0
             self.model.kwargs['r0'] = r0
-        if not self.fitter_kwargs['fix_g1'] and g1 == g1:
+        if g1 == g1:
             self.model.g1 = g1
-        if not self.fitter_kwargs['fix_g2'] and g2 == g2:
+        if g2 == g2:
             self.model.g2 = g2
         # update the misalignment
-        misalignment_arr = np.array([
+        misalignment = np.array([
                   [z04d, z04x, z04y],
                   [z05d, z05x, z05y],
                   [z06d, z06x, z06y],
@@ -559,8 +548,7 @@ class OpticalWavefrontPSF(PSF):
                   ])
         old_misalignment = self.interp.misalignment
         # make sure we don't update the fixed parameters
-        misalignment = np.where(self._misalignment_fix, old_misalignment, misalignment_arr)
-        misalignment = np.where(misalignment != misalignment, old_misalignment, misalignment)
+        misalignment = np.where(misalignment == misalignment, misalignment, old_misalignment)
         # now we can update the interp
         self.interp.misalignment = misalignment
 
@@ -576,10 +564,12 @@ class OpticalWavefrontPSF(PSF):
                       [z10d, z10x, z10y],
                       [z11d, z11x, z11y],
                       ])
+            misalignment_print = np.where(misalignment_print == misalignment_print, misalignment_print, 0)
             try:
                 old_misalignment_print = np.vstack((
                     np.array([[old_r0, old_g1, old_g2]]),
                     old_misalignment))
+                old_misalignment_print = np.where(old_misalignment_print == old_misalignment_print, old_misalignment_print, 0)
                 logger.debug('New - Old misalignment is \n{0}'.format(misalignment_print - old_misalignment_print))
                 logger.debug('New misalignment is \n{0}'.format(misalignment_print))
             except:
@@ -793,14 +783,7 @@ class OpticalWavefrontPSF(PSF):
                 self.fitter_kwargs[combined_key] = data[combined_key][0]
 
         # do the awkward misalignment stuff
-        # initialize the _misalignment_fix array to False so we can set initial values
-        self._misalignment_fix = np.array([[False] * 3] * (11 - 4 + 1))
         self._update_psf_params(**self.fitter_kwargs)
-
-        # now set the _misalignment_fix array to the fixed terms based on the fitter_kwargs
-        self._misalignment_fix = np.array([[self.fitter_kwargs['fix_z{0:02d}{1}'.format(zi, dxy)]
-                                            for dxy in ['d', 'x', 'y']]
-                                            for zi in range(4, 12)])
 
         self._time = time()
 
