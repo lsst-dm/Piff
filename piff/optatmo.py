@@ -117,17 +117,7 @@ class OptAtmoPSF(PSF):
             logger.info("Removed no stars in OpticalWavefrontPSF fit")
 
         # disable r0,g1,g2 from OpticalWavefrontPSF, since AtmoPSF deals with those bits.
-        if logger:
-            logger.info("Disabling atmosphere in OpticalWavefrontPSF")
-        self.optpsf._update_psf_params(r0=None, g1=None, g2=None)
-        self.optpsf.fitter_kwargs['fix_r0'] = True
-        self.optpsf.fitter_kwargs['fix_g1'] = True
-        self.optpsf.fitter_kwargs['fix_g2'] = True
-        # double plus sure we disable it
-        self.optpsf.model.kolmogorov_kwargs = {}
-        self.optpsf.model.kwargs['r0'] = None
-        self.optpsf.model.g1 = None
-        self.optpsf.model.g2 = None
+        self.optpsf.disable_atmosphere(logger=logger)
 
         # extract profiles for AtmoPSF
         if logger:
@@ -315,7 +305,7 @@ class OpticalWavefrontPSF(PSF):
             self.fitter_kwargs.update({
                 'throw_nan': False,
                 'pedantic': True,
-                'print_level': 0,
+                'print_level': 2,
                 'errordef': 0.5,  # guesstimated
                 })
         else:
@@ -334,6 +324,37 @@ class OpticalWavefrontPSF(PSF):
                                             for zi in range(4, 12)])
 
         self._time = time()
+
+    def disable_atmosphere(self, logger=None):
+        """Disable atmosphere within OpticalWavefrontPSF"""
+        if logger:
+            logger.info("Disabling atmosphere in OpticalWavefrontPSF")
+        self._update_psf_params(r0=None, g1=None, g2=None)
+        self.fitter_kwargs['fix_r0'] = True
+        self.fitter_kwargs['fix_g1'] = True
+        self.fitter_kwargs['fix_g2'] = True
+        # double plus sure we disable it
+        for key in self.model.required_kolmogorov_kwargs:
+            if key in self.model.kolmogorov_kwargs:
+                self.model.kolmogorov_kwargs.pop(key)
+            if key in self.model.kwargs:
+                self.model.kwargs.pop(key)
+        self.model.g1 = None
+        self.model.g2 = None
+
+    def enable_atmosphere(self, r0, g1, g2, logger=None):
+        """Turn the atmosphere back on.
+
+        :param r0: seeing parameter
+        :param g1,2: ellipticity
+        :param logger: logger
+
+        Note: r0, g1, g2 might still be fixed.
+        """
+        self.model.kwargs['r0'] = r0
+        self.model.kolmogorov_kwargs['r0'] = r0
+        self.model.g1 = g1
+        self.model.g2 = g2
 
     def _model(self, template='des', engine='galsim_fast', **model_kwargs):
         """Load up the modeling parameters
@@ -501,6 +522,7 @@ class OpticalWavefrontPSF(PSF):
         # results = lmfit.minimize(resid_func, params, args)
         raise NotImplementedError("lmfit not currently implemented")
 
+    # TODO: you should be able to update psf params regardless of the "fixed" kwarg. Fixing should only matter to the fitter, not to updating the params!
     def _update_psf_params(self,
                            r0=np.nan, g1=np.nan, g2=np.nan,
                            z04d=np.nan, z04x=np.nan, z04y=np.nan,
@@ -624,7 +646,7 @@ class OpticalWavefrontPSF(PSF):
             if self._n_iter % 50 == 0:
                 logger.warning(''.join(log))
             else:
-                logger.debug(''.join(log))
+                logger.info(''.join(log))
         self._n_iter += 1
         chi2_sum = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
         if logger:
