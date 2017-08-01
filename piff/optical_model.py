@@ -159,10 +159,14 @@ class Optical(Model):
 
         kolmogorov_keys = ('lam', 'r0', 'lam_over_r0', 'scale_unit',
                            'fwhm', 'half_light_radius', 'r0_500')
+        # there are certain keys we _must_ have for the kolmogorov atmosphere to work.
+        self.required_kolmogorov_kwargs = ['r0', 'lam_over_r0', 'fwhm', 'r0_500']
         self.kolmogorov_kwargs = { key : self.kwargs[key] for key in self.kwargs
                                                           if key in kolmogorov_keys }
-        # If lam is the only one, then remove it -- we don't have a Kolmogorov component then.
-        if self.kolmogorov_kwargs.keys() == ['lam']:
+        required_keys_present = len(set(self.kolmogorov_kwargs.keys()).intersect(set(self.required_kolmogorov_kwargs)))
+        if len(required_keys_present) > 1 and logger:
+            logger.warning('Warning! We have too many kolmogorov kwargs. I think things may behave unexpectedly!')
+        if len(required_keys_present) == 0:
             self.kolmogorov_kwargs = {}
         # Also, let r0=0 or None indicate that there is no kolmogorov component
         if 'r0' in self.kolmogorov_kwargs and not self.kolmogorov_kwargs['r0']:
@@ -225,7 +229,8 @@ class Optical(Model):
             gaussian = galsim.Gaussian(sigma=self.sigma, gsparams=self.gsparams)
             prof.append(gaussian)
         # atmosphere
-        if len(self.kolmogorov_kwargs) > 0:
+        # make sure we have at least these keys
+        if len(set(self.kolmogorov_kwargs.keys()).intersect(set(self.required_kolmogorov_kwargs))) > 1:
             atm = galsim.Kolmogorov(gsparams=self.gsparams, **self.kolmogorov_kwargs)
             prof.append(atm)
         # optics
