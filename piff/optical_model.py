@@ -230,7 +230,7 @@ class Optical(Model):
             prof.append(gaussian)
         # atmosphere
         # make sure we have at least these keys
-        if len(set(self.kolmogorov_kwargs.keys()).intersect(set(self.required_kolmogorov_kwargs))) > 1:
+        if len(set(self.kolmogorov_kwargs.keys()).intersect(set(self.required_kolmogorov_kwargs))) > 0:
             atm = galsim.Kolmogorov(gsparams=self.gsparams, **self.kolmogorov_kwargs)
             prof.append(atm)
         # optics
