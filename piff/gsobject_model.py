@@ -145,7 +145,7 @@ class GSObjectModel(Model):
             prof = Convolve([profile, prof])
         image = star.image.copy()
         prof.drawImage(image, method=self._method, offset=(star.image_pos-image.trueCenter()))
-        data = StarData(image, star.image_pos, star.weight, star.data.pointing)
+        data = StarData(image, star.image_pos, star.weight, star.data.pointing, properties=star.data.properties, _xyuv_set=True)
         return Star(data, star.fit)
 
     def _lmfit_resid(self, lmparams, star, profile=None):
