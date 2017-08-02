@@ -742,8 +742,14 @@ class StarData(object):
         y -= self.image_pos.y
 
         # Convert to u,v coords
-        u = self.affine_wcs._u(x,y)
-        v = self.affine_wcs._v(x,y)
+        # TODO: This will almost certainly be changed in galsim, so let's just stick this in for now
+        try:
+            u = self.affine_wcs._u(x,y)
+            v = self.affine_wcs._v(x,y)
+        except:
+            # newer version of galsim has a color command that needs to be specified?
+            u = self.affine_wcs._u(x,y, color=None)
+            v = self.affine_wcs._v(x,y, color=None)
 
         # Get flat versions of everything
         u = u.flatten()
