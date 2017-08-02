@@ -20,6 +20,7 @@ from __future__ import print_function
 
 import numpy as np
 import copy
+import galsim
 
 from .psf import PSF
 from .util import write_kwargs, read_kwargs, make_dtype, adjust_value
@@ -78,6 +79,7 @@ class SingleChipPSF(PSF):
         :param profiles:        Galsim profiles to convolve with model during fit. [default: None]
         :param logger:          A logger object for logging debug info. [default: None]
         """
+        logger = galsim.config.LoggerWrapper(logger)
         self.stars = stars
         self.wcs = wcs
         self.pointing = pointing
@@ -107,6 +109,8 @@ class SingleChipPSF(PSF):
 
         :returns:           Star instance with its image filled with rendered PSF
         """
+        if 'chipnum' not in star.data.properties:
+            raise ValueError("SingleChip drawStar requires the star to have a chipnum property")
         chipnum = star['chipnum']
         return self.psf_by_chip[chipnum].drawStar(star)
 

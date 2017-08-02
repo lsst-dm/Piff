@@ -50,7 +50,7 @@ def test_optical(model=None):
 
 
 @timer
-def test_pupil_im(pupil_plane_im='optics_test/DECam_pupil_128.fits'):
+def test_pupil_im(pupil_plane_im='input/DECam_pupil_128.fits'):
     import galsim
     print('test pupil im: ', pupil_plane_im)
     # make sure we can load up a pupil image
@@ -200,8 +200,8 @@ def make_empty_star(icen=500, jcen=700, chipnum=28, params=None,
 if __name__ == '__main__':
     test_init()
     test_optical()
-    test_pupil_im(pupil_plane_im='optics_test/DECam_pupil_128.fits')
-    test_pupil_im(pupil_plane_im='optics_test/DECam_pupil_512.fits')
+    test_pupil_im(pupil_plane_im='input/DECam_pupil_128.fits')
+    test_pupil_im(pupil_plane_im='input/DECam_pupil_512.fits')
     test_kolmogorov()
     test_shearing()
     test_gaussian()

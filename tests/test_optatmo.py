@@ -27,7 +27,7 @@ from time import time
 def create_fit_dict():
     # code for returning everything we need for the fits
 
-    piff_dict = {'verbose': 2}
+    piff_dict = {'verbose': 1}
 
     # input
     dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -304,7 +304,7 @@ def test_optical_fit():
 def test_disk():
     # test saving and loading
     if __name__ == '__main__':
-        logger = piff.config.setup_logger(verbose=3)
+        logger = piff.config.setup_logger(verbose=2)
     else:
         logger = None
 
@@ -326,8 +326,6 @@ def test_disk():
     for key in optpsf_disk.fitter_kwargs:
         assert optpsf_disk.fitter_kwargs[key] == optpsf.fitter_kwargs[key], "Failture on saving and loading optical wavefront psf key {0}".format(key)
 
-    # _misalignment_fix
-    np.testing.assert_array_equal(optpsf._misalignment_fix, optpsf_disk._misalignment_fix, "Array fixing misalignment fails saving and loading.")
 
     # interp.misalignment
     np.testing.assert_array_equal(optpsf.interp.misalignment, optpsf_disk.interp.misalignment, "DECam interp misalignment fails saving and loading")
@@ -341,6 +339,7 @@ def test_disk():
     assert optpsf_disk.model.g2 == optpsf.model.g2, "Failture on saving and loading optical wavefront optical g2"
 
     # check fit params
+    # TODO: there is something messed up in the saving and loading of stars
     star = optpsf.stars[0]
     # first check decaminfo
     properties = optpsf.decaminfo.pixel_to_focal(star.copy()).data.properties
@@ -375,15 +374,31 @@ def test_disk():
     # check shapes
     star_drawn = optpsf.drawStar(star.copy())
     # use the same star but different psf
-    star_disk = optpsf_disk.drawStar(star.copy())
+    star_iodrawn = optpsf_disk.drawStar(star.copy())
     # compare shape
-    shape = optpsf._measure_shapes([star_drawn])[0]
-    shape_disk = optpsf_disk._measure_shapes([star_disk])[0]
-    np.testing.assert_array_equal(shape, shape_disk, "Failure on measured shapes of stars on saving and loading optical wavefront")
+    shape = optpsf._measure_shapes([star])[0]
+    shape_drawn = optpsf._measure_shapes([star_drawn])[0]
+    ioshape = optpsf_disk._measure_shapes([star])[0]
+    ioshape_drawn = optpsf_disk._measure_shapes([star_drawn])[0]
+    shape_iodrawn = optpsf._measure_shapes([star_iodrawn])[0]
+    ioshape_drawn = optpsf_disk._measure_shapes([star_drawn])[0]
+    ioshape_iodrawn = optpsf_disk._measure_shapes([star_iodrawn])[0]
+    for s in [shape, ioshape, shape_drawn, ioshape_drawn, shape_iodrawn, ioshape_drawn, ioshape_iodrawn]:
+        print(s)
+    np.testing.assert_array_equal(shape_drawn, ioshape_drawn, "Failure on comparing the measured shape before and after IO of optical psf")
 
     # compare array
-    assert star_drawn.image == star_disk.image, "Failure of drawn images"
+    assert star_drawn.image == star_iodrawn.image, "Failure of drawn images"
 
+    star_disk = optpsf_disk.stars[0].copy()
+    star_disk_drawn = optpsf.drawStar(star_disk.copy())
+    star_disk_iodrawn = optpsf.drawStar(star_disk.copy())
+    shape_disk_drawn = optpsf._measure_shapes([star_disk_drawn])[0]
+    shape_disk_iodrawn = optpsf._measure_shapes([star_disk_iodrawn])[0]
+
+    for s in [shape_disk_drawn, shape_disk_iodrawn]:
+        print(s)
+    import ipdb; ipdb.set_trace()
     # TODO: requires making psf images
     # repeat for psf that has been fitted
 

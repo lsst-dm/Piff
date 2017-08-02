@@ -116,6 +116,7 @@ class Optical(Model):
         :param gsparams:        Galsim GSParams object
 
         """
+        logger = galsim.config.LoggerWrapper(logger)
         # If pupil_angle and strut angle are provided as strings, eval them.
         for key in ['pupil_angle', 'strut_angle']:
             if key in kwargs and isinstance(kwargs[key],str):
@@ -146,16 +147,16 @@ class Optical(Model):
         if 'pupil_plane_im' in kwargs:
             pupil_plane_im = kwargs.pop('pupil_plane_im')
             # make sure it isn't just None
-            if pupil_plane_im is not None:
-                if isinstance(pupil_plane_im, str):
-                    if logger:
-                        logger.debug('Loading pupil_plane_im from {0}'.format(pupil_plane_im))
-                    pupil_plane_im = galsim.fits.read(pupil_plane_im)
-                self.optical_psf_kwargs['pupil_plane_im'] = pupil_plane_im
-                # also need to cut several kwargs from optical_psf_kwargs if we have pupil_plane_im
-                pupil_plane_conflict_keys = ('circular_pupil', 'nstruts', 'strut_thick', 'strut_angle')
-                for key in pupil_plane_conflict_keys:
-                    self.optical_psf_kwargs.pop(key, None)
+            # if pupil_plane_im is not None:
+            if isinstance(pupil_plane_im, str):
+                if logger:
+                    logger.debug('Loading pupil_plane_im from {0}'.format(pupil_plane_im))
+                pupil_plane_im = galsim.fits.read(pupil_plane_im)
+            self.optical_psf_kwargs['pupil_plane_im'] = pupil_plane_im
+            # also need to cut several kwargs from optical_psf_kwargs if we have pupil_plane_im
+            pupil_plane_conflict_keys = ('circular_pupil', 'nstruts', 'strut_thick', 'strut_angle')
+            for key in pupil_plane_conflict_keys:
+                self.optical_psf_kwargs.pop(key, None)
 
         kolmogorov_keys = ('lam', 'r0', 'lam_over_r0', 'scale_unit',
                            'fwhm', 'half_light_radius', 'r0_500')
