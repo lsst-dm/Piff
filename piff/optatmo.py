@@ -100,7 +100,7 @@ class OptAtmoPSF(PSF):
         # send a warning (it is unconventional).
         if logger:
             for key in ['r0', 'g1', 'g2']:
-                if not self.optpsf.fitter_kwargs['fix_' + key]:
+                if self.optpsf.fitter_kwargs['fix_' + key]:
                     logger.warning("Warning! You have left {0} fixed. This parameter coarsely emulates the atmosphere (so that we can get near the correct location before we actually fit the atmosphere), so it is usually good to have on.".format(key))
 
         self.optpsf.fit(self.stars, wcs, pointing, logger=logger)
