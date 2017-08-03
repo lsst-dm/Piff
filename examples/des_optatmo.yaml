@@ -18,14 +18,14 @@
 
 input:
 
-    # Define the location of the input images and catalogs
-    dir: /nfs/slac/g/ki/ki18/cpd/Projects/DES/Piff/tests/y1_test_dir  # You'll probably need to change this...
-
-    # Note the * here.  For now, you can specif this eithe as a single filenames, a list of
-    # filenames, or something that glob.glob() will understand.
-    images: "DECam_00241238_%02d.fits.fz"
-    cats: "DECam_00241238_%02d_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits"
-    chipnums: "[ c for c in range(1,63) if c is not 61 and c is not 31 ]"
+    # must specify in advance.
+    # TODO: currently do not know how to create a list to get all the ccds
+    # nimages: 5
+    image_file_name: '/nfs/slac/g/ki/ki18/cpd/Projects/DES/Piff/tests/y1_test_dir/DECam_*_??.fits.fz'
+    cat_file_name:
+        type: Eval
+        str: "image_file_name.replace('.fits.fz', '_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits')"
+        simage_file_name: '@input.image_file_name'
 
     # What hdu is everything in?
     image_hdu: 1
@@ -44,6 +44,13 @@ input:
     # How large should the postage stamp cutouts of the stars be?
     stamp_size: 31
 
+    # use only some stars per ccd
+    nstars: 100
+    # cut poorly measured stars
+    min_snr: 20
+    # limit star snr so we don't weight bright stars
+    max_snr: 100
+
 psf:
 
     # combine the optical and atmosphere psfs together
@@ -61,7 +68,7 @@ psf:
         max_iterations: 300
 
         # if > 0, number of stars to use in fit
-        n_fit_stars: 20
+        n_fit_stars: 0
 
         # fudge factor in chi square until we fix errors in hsm
         error_estimate: 0.001

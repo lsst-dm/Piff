@@ -18,14 +18,12 @@
 
 input:
 
-    # Define the location of the input images and catalogs
-    dir: /Users/Mike/Astro/des/Y1/y1_test  # You'll probably need to change this...
+    image_file_name: "/Users/Mike/Astro/des/Y1/y1_test/DECam_00241238_??.fits.fz"  # You'll probably need to change this...
+    cat_file_name:
+        type: Eval
+        str: "image_file_name.replace('.fits.fz', '_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits')"
+        simage_file_name: '@input.image_file_name'
 
-    # Note the * here.  For now, you can specif this eithe as a single filenames, a list of
-    # filenames, or something that glob.glob() will understand.
-    images: "DECam_00241238_%02d.fits.fz"
-    cats: "DECam_00241238_%02d_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits"
-    chipnums: "[ c for c in range(1,63) if c is not 61 and c is not 31 ]"
 
     # What hdu is everything in?
     image_hdu: 1
