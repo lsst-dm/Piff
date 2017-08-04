@@ -25,7 +25,6 @@ from piff_test_helper import timer
 
 @timer
 def test_init():
-    print('test init')
     # make sure we can init with defaults
     model = piff.Optical(template='des')
     return model
@@ -38,7 +37,6 @@ def test_optical(model=None):
     params[0] = 0.5
     star = make_empty_star(params=params)
     if not model:
-        print('test optical')
         model = piff.Optical(template='des')
     # given zernikes, make sure we can:
     star = model.draw(star)
@@ -52,7 +50,6 @@ def test_optical(model=None):
 @timer
 def test_pupil_im(pupil_plane_im='input/DECam_pupil_128.fits'):
     import galsim
-    print('test pupil im: ', pupil_plane_im)
     # make sure we can load up a pupil image
     model = piff.Optical(diam=4.274419, lam=500., r0=0.1, pupil_plane_im=pupil_plane_im)
     test_optical(model)
@@ -70,7 +67,6 @@ def test_pupil_im(pupil_plane_im='input/DECam_pupil_128.fits'):
 
 @timer
 def test_kolmogorov():
-    print('test kolmogorov')
     # make sure if we put in different kolmogorov things that things change
     star = make_empty_star()
 
@@ -86,7 +82,6 @@ def test_kolmogorov():
 
 @timer
 def test_shearing():
-    print('test shearing')
     # make sure if we put in common mode ellipticities that things change
     star = make_empty_star()
     g1 = 0
@@ -102,7 +97,6 @@ def test_shearing():
 @timer
 def test_gaussian():
     gaussian = piff.Gaussian(include_pixel=False)
-    print('test gaussian')
     star = make_empty_star()
     # test gaussian alone
     sigma = 1
@@ -126,10 +120,36 @@ def test_gaussian():
     model = piff.Optical(r0=0.1, sigma=sigma, g1=g1, g2=g2, template='des')
     star = model.draw(star)
 
+@timer
+def test_turn_off():
+    # make sure if we put in different kolmogorov things that things change
+    params = np.array([0] * (11 - 4 + 1))
+    # add defocus
+    params[0] = 0.5
+    star = make_empty_star(params=params)
+
+    model = piff.Optical(r0=0.1, template='des')
+    star = model.draw(star)
+
+    # now turn off the atmosphere
+    model.kolmogorov_kwargs['r0'] = None
+    star2 = model.draw(star)
+
+    # turning off the atmosphere should produce a different star
+    chi2 = np.std((star.image - star2.image).array)
+    assert chi2 != 0,'chi2 is zero!?'
+
+    # and turn it back on
+    model.kolmogorov_kwargs['r0'] = 0.1
+    star3 = model.draw(star)
+
+    # turning on the atmosphere should produce exactly the same star
+    chi2 = np.std((star.image - star3.image).array)
+    assert chi2 == 0,'chi2 is not zero!?'
+
 
 @timer
 def test_disk():
-    print('test read/write')
     # save and load
     r0 = 0.1
     sigma = 1.2
@@ -206,3 +226,4 @@ if __name__ == '__main__':
     test_shearing()
     test_gaussian()
     test_disk()
+    test_turn_off()

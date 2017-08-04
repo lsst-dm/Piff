@@ -275,10 +275,20 @@ class Star(object):
         # Add any remaining properties
         for key in prop_keys:
             if hasattr(stars[0].data.properties[key], '__iter__'):
-                dtypes.append( (key, float, len(stars[0].data.properties[key])))
+                # TODO: after confirming this works, delete
+                # dtypes.append( (key, float, len(stars[0].data.properties[key])))
+                dtype = type(stars[0].data.properties[key][0])
+                if dtype == type(None):
+                    dtype = float
+                dtypes.append( (key, dtype, len(stars[0].data.properties[key])))
                 cols.append( [ s.data.properties[key] for s in stars ])
             else:
-                dtypes.append( (key, float) )
+                # TODO: after confirming this works, delete
+                # dtypes.append( (key, float) )
+                dtype = type(stars[0].data.properties[key])
+                if dtype == type(None):
+                    dtype = float
+                dtypes.append( (key, dtype) )
                 cols.append( [ s.data.properties[key] for s in stars ] )
 
         # Add the local WCS values

@@ -21,7 +21,7 @@ import galsim
 
 from .model import Model, ModelFitError
 from .star import Star, StarFit, StarData
-from .util import hsm
+from .util import hsm, hsm_error
 
 
 class GSObjectModel(Model):
@@ -266,6 +266,21 @@ class GSObjectModel(Model):
             sd.properties['hsm'] = flux, cenu, cenv, size, g1, g2
             return Star(sd, star.fit)
         return star
+
+    @staticmethod
+    def _hsm_errors(star, logger=None):
+        # TODO: since I am concerned with unnormalized 2nd moments, these are not the same units as above!
+        # repeat for hsm_error
+        sigma_flux, sigma_cenu, sigma_cenv, sigma_e0, sigma_e1, sigma_e2, flux_calc, cenu_calc, cenv_calc, e0_calc, e1_calc, e2_calc = hsm_error(star)
+        if logger:
+            logger.debug('Star hsm_error. Value of flux, u0, v0, e0, e1, e2 are:')
+            logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux_calc, cenu_calc, cenv_calc, e0_calc, e1_calc, e2_calc))
+            flux, cenu, cenv, size, g1, g2, flag = hsm(star)
+            logger.debug('Star hsm_error. Value of regular hsm algorithm flux, u0, v0, e0, e1, e2 are:')
+            logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux, cenu, cenv, size ** 2, g1 * size ** 2, g2 * size ** 2))
+            logger.debug('Star hsm_error. Value of errors for flux, u0, v0, e0, e1, e2 are:')
+            logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(sigma_flux, sigma_cenu, sigma_cenv, sigma_e0, sigma_e1, sigma_e2))
+        return sigma_flux, sigma_cenu, sigma_cenv, sigma_e0, sigma_e1, sigma_e2, flux_calc, cenu_calc, cenv_calc, e0_calc, e1_calc, e2_calc
 
     def fit(self, star, fastfit=None, profile=None, logger=None):
         """Fit the image either using HSM or lmfit.

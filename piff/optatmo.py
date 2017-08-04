@@ -34,6 +34,8 @@ from .star import Star, StarFit, StarData
 from .des.decam_wavefront import DECamWavefront
 from .des.decaminfo import DECamInfo
 
+from .util import hsm, hsm_error
+
 from time import time
 
 class OptAtmoPSF(PSF):
@@ -110,7 +112,7 @@ class OptAtmoPSF(PSF):
         if self.optpsf.kwargs['n_fit_stars']:
             nremoved = self.optpsf.kwargs['n_fit_stars'] - len(self.optpsf._fit_stars)
         else:
-            nremoved = len(self._fit_stars) - len(self.optpsf._fit_stars)
+            nremoved = len(self.stars) - len(self.optpsf._fit_stars)
         if nremoved > 0:
             logger.warning("Removed {0} stars in OpticalWavefrontPSF fit".format(nremoved))
         else:
@@ -164,6 +166,7 @@ class OptAtmoPSF(PSF):
         params = []
         profs = []
         for psf_i in self.psfs:
+            # TODO: do I need to pass in gsparams?
             profs.append(psf_i.getProfile(star))
             params.append(psf_i.getParams(star))
         params = np.hstack(params)
@@ -171,6 +174,7 @@ class OptAtmoPSF(PSF):
         # draw star
         prof = galsim.Convolve(profs)
         image = star.image.copy()
+        # TODO: method == pixel?
         prof.drawImage(image, method='auto', offset=(star.image_pos-image.trueCenter()))
         # keep star properties by using setData instead
         data = star.data.setData(image.array.flatten())
@@ -324,11 +328,14 @@ class OpticalWavefrontPSF(PSF):
             logger.info("Disabling atmosphere in OpticalWavefrontPSF")
         self._update_psf_params(r0=None, g1=None, g2=None)
         # double plus sure we disable it
-        for key in self.model.required_kolmogorov_kwargs:
-            if key in self.model.kolmogorov_kwargs:
-                self.model.kolmogorov_kwargs.pop(key)
-            if key in self.model.kwargs:
-                self.model.kwargs.pop(key)
+        self.model.kwargs['r0'] = None
+        self.model.kolmogorov_kwargs['r0'] = None
+        # TODO: I think we want to keep the keys in, for reasons.
+        # for key in self.model.required_kolmogorov_kwargs:
+        #     if key in self.model.kolmogorov_kwargs:
+        #         self.model.kolmogorov_kwargs.pop(key)
+        #     if key in self.model.kwargs:
+        #         self.model.kwargs.pop(key)
         self.model.g1 = None
         self.model.g2 = None
 
@@ -369,6 +376,11 @@ class OpticalWavefrontPSF(PSF):
             self.model = Optical(template=template, pupil_plane_im=self.kwargs['pupil_plane_im'], **model_kwargs)
         else:
             raise Exception('Invalid engine! {0}'.format(engine))
+
+    def _measure_shape_errors(self, stars, logger=None):
+        """Measure errors on galaxy shapes
+        """
+        pass
 
     def _measure_shapes(self, stars, logger=None):
         """Work around the gsobject to measure shapes. Returns array of shapes

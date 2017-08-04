@@ -656,6 +656,25 @@ def test_direct():
             roundtrip_model = piff.GSObjectModel.read(f, 'psf_model')
         assert model.__dict__ == roundtrip_model.__dict__
 
+@timer
+def test_error():
+    """ Test that error code produces results we expect.
+    """
+    # create fake gaussian star with no noise
+
+    # measure hsm_error
+
+    # check that shape, ellipticity, and centroid match with galsim hsm
+
+    # for set of SNR:
+    # create fake gaussian star with specified noise
+
+    # measure hsm_error
+
+    # see if noise properties behave as expected
+
+    pass
+
 
 if __name__ == '__main__':
     test_simple()
@@ -665,3 +684,4 @@ if __name__ == '__main__':
     test_gradient()
     test_gradient_center()
     test_direct()
+    test_error()

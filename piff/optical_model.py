@@ -161,7 +161,9 @@ class Optical(Model):
         kolmogorov_keys = ('lam', 'r0', 'lam_over_r0', 'scale_unit',
                            'fwhm', 'half_light_radius', 'r0_500')
         # there are certain keys we _must_ have for the kolmogorov atmosphere to work.
-        self.required_kolmogorov_kwargs = ['r0', 'lam_over_r0', 'fwhm', 'r0_500']
+        # TODO: IF we have keys that are not r0, calculate what the kwarg would be for r0. Let's just keep everything in terms of r0 for simplicity sake.
+        # self.required_kolmogorov_kwargs = ['r0', 'lam_over_r0', 'fwhm', 'r0_500']
+        self.required_kolmogorov_kwargs = ['r0']
         self.kolmogorov_kwargs = { key : self.kwargs[key] for key in self.kwargs
                                                           if key in kolmogorov_keys }
         required_keys_present = len(set(self.kolmogorov_kwargs.keys()).intersection(set(self.required_kolmogorov_kwargs)))
@@ -170,8 +172,8 @@ class Optical(Model):
         if required_keys_present == 0:
             self.kolmogorov_kwargs = {}
         # Also, let r0=0 or None indicate that there is no kolmogorov component
-        if 'r0' in self.kolmogorov_kwargs and not self.kolmogorov_kwargs['r0']:
-            self.kolmogorov_kwargs = {}
+        # if 'r0' in self.kolmogorov_kwargs and not self.kolmogorov_kwargs['r0']:
+        #     self.kolmogorov_kwargs = {}
 
         # Store the Gaussian and shear parts
         self.sigma = kwargs.pop('sigma',None)
@@ -226,12 +228,14 @@ class Optical(Model):
         import galsim
         prof = []
         # gaussian
-        if self.sigma is not None:
+        # TODO: check sigma <= 0 and flip out?
+        if self.sigma > 0:
             gaussian = galsim.Gaussian(sigma=self.sigma, gsparams=self.gsparams)
             prof.append(gaussian)
         # atmosphere
         # make sure we have at least these keys
-        if len(set(self.kolmogorov_kwargs.keys()).intersection(set(self.required_kolmogorov_kwargs))) > 0:
+        # TODO: check r0 <= 0 and flip out?
+        if self.kolmogorov_kwargs['r0'] > 0:
             atm = galsim.Kolmogorov(gsparams=self.gsparams, **self.kolmogorov_kwargs)
             prof.append(atm)
         # optics
@@ -242,11 +246,11 @@ class Optical(Model):
             aberrations = [0,0,0,0] + list(params)
             optics = galsim.OpticalPSF(aberrations=aberrations, gsparams=self.gsparams, **self.optical_psf_kwargs)
             prof.append(optics)
-            # convolve together
 
         if len(prof) == 0:
             raise RuntimeError('No profile returned by model!')
 
+        # TODO: Q: do I need this to be a list?
         prof = galsim.Convolve(prof)
 
         if self.g1 is not None or self.g2 is not None:
