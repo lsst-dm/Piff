@@ -282,6 +282,7 @@ class Optical(Model):
                         pointing=star.data.pointing,
                         field_pos=star.data.field_pos,
                         values_are_sb=star.data.values_are_sb,
+                        orig_weight=star.data.orig_weight,
                         properties=properties)
         return Star(data, star.fit)
 

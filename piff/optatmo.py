@@ -175,9 +175,20 @@ class OptAtmoPSF(PSF):
         prof = galsim.Convolve(profs)
         image = star.image.copy()
         # TODO: method == pixel?
-        prof.drawImage(image, method='auto', offset=(star.image_pos-image.trueCenter()))
-        # keep star properties by using setData instead
-        data = star.data.setData(image.array.flatten())
+        image = prof.drawImage(image, method='auto', offset=(star.image_pos-image.trueCenter()))
+        # TODO: might need to update image pos?
+        properties = star.data.properties.copy()
+        for key in ['x', 'y', 'u', 'v']:
+            # Get rid of keys that constructor doesn't want to see:
+            properties.pop(key,None)
+        data = StarData(image=image,
+                        image_pos=star.data.image_pos,
+                        weight=star.data.weight,
+                        pointing=star.data.pointing,
+                        field_pos=star.data.field_pos,
+                        values_are_sb=star.data.values_are_sb,
+                        orig_weight=star.data.orig_weight,
+                        properties=properties)
         return Star(data, StarFit(params))
 
     def drawStarList(self, stars):

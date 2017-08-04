@@ -649,6 +649,10 @@ class StarData(object):
         else:
             self.orig_weight = orig_weight
 
+        # need to assert that weight and image and all have the same shape
+        if self.weight.array.shape != self.image.array.shape:
+            raise ValueError('Weight and image array shapes not the same!')
+
         if properties is None:
             self.properties = {}
         else:
