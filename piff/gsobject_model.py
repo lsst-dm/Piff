@@ -269,18 +269,10 @@ class GSObjectModel(Model):
 
     @staticmethod
     def _hsm_errors(star, logger=None):
-        # TODO: since I am concerned with unnormalized 2nd moments, these are not the same units as above!
+        # TODO: these are not the same things as above...
         # repeat for hsm_error
-        sigma_flux, sigma_cenu, sigma_cenv, sigma_e0, sigma_e1, sigma_e2, flux_calc, cenu_calc, cenv_calc, e0_calc, e1_calc, e2_calc = hsm_error(star)
-        if logger:
-            logger.debug('Star hsm_error. Value of flux, u0, v0, e0, e1, e2 are:')
-            logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux_calc, cenu_calc, cenv_calc, e0_calc, e1_calc, e2_calc))
-            flux, cenu, cenv, size, g1, g2, flag = hsm(star)
-            logger.debug('Star hsm_error. Value of regular hsm algorithm flux, u0, v0, e0, e1, e2 are:')
-            logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux, cenu, cenv, size ** 2, g1 * size ** 2, g2 * size ** 2))
-            logger.debug('Star hsm_error. Value of errors for flux, u0, v0, e0, e1, e2 are:')
-            logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(sigma_flux, sigma_cenu, sigma_cenv, sigma_e0, sigma_e1, sigma_e2))
-        return sigma_flux, sigma_cenu, sigma_cenv, sigma_e0, sigma_e1, sigma_e2, flux_calc, cenu_calc, cenv_calc, e0_calc, e1_calc, e2_calc
+        sigma_flux, sigma_cenu, sigma_cenv, sigma_e0, sigma_e1, sigma_e2 = hsm_error(star, logger=logger, return_debug=False)
+        return sigma_flux, sigma_cenu, sigma_cenv, sigma_e0, sigma_e1, sigma_e2
 
     def fit(self, star, fastfit=None, profile=None, logger=None):
         """Fit the image either using HSM or lmfit.
@@ -414,9 +406,9 @@ class Gaussian(GSObjectModel):
     :param include_pixel:   Include integration over pixel?  [default: True]
     :param logger:   A logger object for logging debug info. [default: None]
     """
-    def __init__(self, fastfit=False, force_model_center=True, include_pixel=True, logger=None):
+    def __init__(self, fastfit=False, force_model_center=True, include_pixel=True, gsparams=None, logger=None):
         import galsim
-        gsobj = galsim.Gaussian(sigma=1.0)
+        gsobj = galsim.Gaussian(sigma=1.0, gsparams=gsparams)
         GSObjectModel.__init__(self, gsobj, fastfit, force_model_center, include_pixel, logger)
         # We'd need self.kwargs['gsobj'] if we were reconstituting via the GSObjectModel
         # constructor, but since config['type'] for this will be Gaussian, it gets reconstituted
@@ -435,9 +427,9 @@ class Kolmogorov(GSObjectModel):
     :param include_pixel:   Include integration over pixel?  [default: True]
     :param logger:   A logger object for logging debug info. [default: None]
     """
-    def __init__(self, fastfit=False, force_model_center=True, include_pixel=True, logger=None):
+    def __init__(self, fastfit=False, force_model_center=True, include_pixel=True, gsparams=None, logger=None):
         import galsim
-        gsobj = galsim.Kolmogorov(half_light_radius=1.0)
+        gsobj = galsim.Kolmogorov(half_light_radius=1.0, gsparams=gsparams)
         GSObjectModel.__init__(self, gsobj, fastfit, force_model_center, include_pixel, logger)
         # We'd need self.kwargs['gsobj'] if we were reconstituting via the GSObjectModel
         # constructor, but since config['type'] for this will be Kolmogorov, it gets reconstituted
@@ -460,9 +452,10 @@ class Moffat(GSObjectModel):
     :param logger:   A logger object for logging debug info. [default: None]
     """
     def __init__(self, beta, trunc=0., fastfit=False, force_model_center=True, include_pixel=True,
+                 gsparams=None,
                  logger=None):
         import galsim
-        gsobj = galsim.Moffat(half_light_radius=1.0, beta=beta, trunc=trunc)
+        gsobj = galsim.Moffat(half_light_radius=1.0, beta=beta, trunc=trunc, gsparams=gsparams)
         GSObjectModel.__init__(self, gsobj, fastfit, force_model_center, include_pixel, logger)
         # We'd need self.kwargs['gsobj'] if we were reconstituting via the GSObjectModel
         # constructor, but since config['type'] for this will be Moffat, it gets reconstituted
