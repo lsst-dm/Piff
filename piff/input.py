@@ -61,7 +61,7 @@ class Input(object):
         # Get the pointing (the coordinate center of the field of view)
         pointing = input_handler.getPointing(logger)
 
-        return stars, wcs, input_handler.pointing
+        return stars, wcs, pointing
 
     def makeStars(self, logger=None):
         """Process the input images and star data, cutting out stamps for each star along with
@@ -572,9 +572,11 @@ class InputFiles(Input):
             cat = cat[cat[use_col]!=0]
 
         # Limit to nstars objects
-        if nstars is not None and nstars > len(cat):
+        if nstars is not None and nstars < len(cat):
             logger.info("Limiting to %d stars for %s",nstars,cat_file_name)
-            cat = cat[:nstars]
+            # randomly select nstars instead of just taking the first ten
+            indx = np.random.choice(len(cat), nstars)
+            cat = cat[indx]
 
         # Make the list of positions:
         if x_col not in cat.dtype.names:
