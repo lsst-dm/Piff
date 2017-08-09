@@ -671,7 +671,7 @@ def test_error():
 
     # measure hsm_error
 
-    # see if noise properties behave as expected
+    # see if noise properties behave as expected by sampling a bunch
 
     pass
 

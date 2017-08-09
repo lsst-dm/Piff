@@ -22,7 +22,7 @@ import numpy as np
 
 import galsim
 
-from .model import Model
+from .model import Model, ModelFitError
 from .interp import Interp
 from .psf import PSF
 
@@ -129,6 +129,7 @@ class OptAtmoPSF(PSF):
         # fit AtmoPSF
         if logger:
             logger.info("Fitting AtmospherePSF")
+        # TODO: want to make sure when we draw stars in atmopsf that we draw the same with self.drawStar
         self.atmopsf.fit(self.stars, wcs, pointing, profiles=profiles, logger=logger)
 
         # update stars from outlier rejection
@@ -231,7 +232,7 @@ class OpticalWavefrontPSF(PSF):
         Constant optical sigma or kolmogorov, g1, g2 in model
         misalignments in interpolant: these are the interp.misalignment terms
     """
-    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', logger=None):
+    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', logger=None):
         """
 
         :param knn_file_name:               Fits file containing the wavefront
@@ -244,6 +245,8 @@ class OpticalWavefrontPSF(PSF):
                                             [default: None]
         :param weights:                     Array or list of weights for comparing gaussian shapes in fit
                                             [default: [0.5, 1, 1], so downweight size]
+        :param max_shapes:                  Array or list of maximum e0, e1, e2 values for stars used in fit. If they are excess of this, then cut.
+                                            [default: [1e10, 1e10, 1e10], which should be >>> any measured values]
         :param fitter_kwargs:               kwargs to pass to fitter
         :param fitter_algorithm:            fitter to use for measuring wavefront. Default is minuit but also can use lmfit
         """
@@ -255,9 +258,6 @@ class OpticalWavefrontPSF(PSF):
         if logger:
             logger.debug("Making interp")
         self.interp = DECamWavefront(knn_file_name, knn_extname, logger=logger, **self.interp_kwargs)
-        if logger:
-            logger.debug("Making model_comparer Gaussian")
-        self.model_comparer = Gaussian(fastfit=True, force_model_center=True, include_pixel=True, logger=logger)
 
         if logger:
             logger.debug("Making DECamInfo")
@@ -266,6 +266,9 @@ class OpticalWavefrontPSF(PSF):
         self.weights = np.array(weights)
         # normalize weights
         self.weights /= self.weights.sum()
+
+        # max shapes
+        self.max_shapes = np.array(max_shapes)
 
         if extra_interp_properties is None:
             self.extra_interp_properties = []
@@ -391,49 +394,43 @@ class OpticalWavefrontPSF(PSF):
     def _measure_shape_errors(self, stars, logger=None):
         """Measure errors on galaxy shapes
         """
-        pass
+        errors = []
+        for star_i, star in enumerate(stars):
+            if logger:
+                logger.debug("Measuring error of star {0}".format(star_i))
+            try:
+                sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2 = hsm_error(star, logger=logger)
+                errors.append([sigma_e0, sigma_e1, sigma_e2])
+            except (ValueError, ModelFitError, RuntimeError) as e:
+                # hsm nan'd out
+                if logger:
+                    logger.debug("Star failed moment parameter; setting errors to nan!")
+                errors.append([np.nan, np.nan, np.nan])
+        errors = np.array(errors)
+        return errors
 
     def _measure_shapes(self, stars, logger=None):
-        """Work around the gsobject to measure shapes. Returns array of shapes
+        """Measure shapes using piff.util.hsm
         """
-        stars_out = []
-        # TODO: It would be nice if I could copy the stars so that the new list is not the same as the old...
+        shapes = []
         for star_i, star in enumerate(stars):
             if logger:
                 logger.debug("Measuring shape of star {0}".format(star_i))
-                logger.debug(star.data.properties)
-            star.fit.params = None
-            # # we also need to pop the hsm parameter because we are using the same stars, so it is getting confused with wrong parameters -- I htink especially flux (since input stars have fluxes like 100000 and our psfs have flux like 1)
-            # if 'hsm' in star.data.properties:
-            #     _ = star.data.properties.pop('hsm')
-            try:
-                star_out = self.model_comparer.fit(star, logger=logger)
-                if logger:
-                    logger.debug(star_out.fit.params)
-                stars_out.append(star_out)
-            except:
+            flux, u0, v0, sigma, g1, g2, flag = hsm(star, logger=logger)
+            if flag != 0:
+                # failed fit!
                 if logger:
                     logger.debug("Star failed moment parameter; setting shapes to nan!")
-                # put in a faux params
-                star.fit.params = np.array([np.nan, np.nan, np.nan])
-                stars_out.append(star)
-                # # not supposed to be rejecting stars...
-                # star_out = self.model_comparer.fit(star, logger=logger)
-                # if logger:
-                #     logger.debug(star_out.fit.params)
-                # stars_out.append(star_out)
-
-        shapes = np.array([star.fit.params for star in stars_out])
-        # we want sigma^2, not sigma for size
-        shapes[:, 0] = np.square(shapes[:, 0])
-        # normalize ellipticity
-        shapes[:, 1:] = shapes[:,0][:, None] * shapes[:, 1:]
+                shapes.append([np.nan, np.nan, np.nan])
+            else:
+                # we want sigma^2, not sigma for size, and normalized ellipticity
+                shapes.append([sigma ** 2, sigma ** 2 * g1, sigma ** 2 * g2])
+        shapes = np.array(shapes)
 
         return shapes
 
-    def fit(self, stars, wcs, pointing,
-            profiles=[], logger=None):
-        """Fit interpolated PSF model to star data using standard sequence of operations.
+    def _fit_init(self, stars, wcs, pointing, profiles=[], logger=None):
+        """Sets up all the tasks you would need to start the fit. Useful for when you want to test PSF functionality but don't want to run the expensive fit.
 
         :param stars:           A list of Star instances.
         :param wcs:             A dict of WCS solutions indexed by chipnum.
@@ -457,20 +454,42 @@ class OpticalWavefrontPSF(PSF):
             self._fit_stars = [stars[i] for i in choice]
             if convolve_profiles:
                 self._fit_profiles = [profiles[i] for i in choice]
+            else:
+                self._fit_profiles = None
             if logger:
                 logger.warning('Cutting from {0} to {1} stars'.format(len(self.stars), len(self._fit_stars)))
         # get the moments of the stars for comparison
         if logger:
             logger.warning("Start measuring the shapes")
         self._shapes = self._measure_shapes(self._fit_stars, logger=logger)
-        # cut more stars if they fail shape measurement
-        indx = ~np.any(self._shapes != self._shapes, axis=1)
+        self._errors = self._measure_shape_errors(self._fit_stars, logger=logger)
+        # cut more stars if they fail shape measurement or error measurement, or if their shape values exceed a cut
+        indx = ~np.any((self._shapes != self._shapes) +
+                       (self._errors != self._errors) +
+                       (np.abs(self._shapes) > self.max_shapes)
+                       , axis=1)
         if logger:
             logger.warning("Cutting {0} stars out of {1}".format(sum(~indx), len(indx)))
         self._shapes = self._shapes[indx]
+        self._errors = self._errors[indx]
         self._fit_stars = [star for star, ind in zip(self._fit_stars, indx) if ind]
         if convolve_profiles:
             self._fit_profiles = [profile for profile, ind in zip(self._fit_profiles, indx) if ind]
+        else:
+            self._fit_profiles = None
+
+    def fit(self, stars, wcs, pointing,
+            profiles=[], logger=None):
+        """Fit interpolated PSF model to star data using standard sequence of operations.
+
+        :param stars:           A list of Star instances.
+        :param wcs:             A dict of WCS solutions indexed by chipnum.
+        :param pointing:        A galsim.CelestialCoord object giving the telescope pointing.
+                                [Note: pointing should be None if the WCS is not a CelestialWCS]
+        :param profiles:        List of Galsim profiles to convolve with model during fit. [default: []]
+        :param logger:          A logger object for logging debug info. [default: None]
+        """
+        self._fit_init(stars, wcs, pointing, profiles=profiles, logger=logger)
 
         # based on fitter, do _minuit_fit or (TODO) _lmfit_fit
         if self.kwargs['fitter_algorithm'] == 'minuit':
@@ -632,7 +651,7 @@ class OpticalWavefrontPSF(PSF):
         # calculate chisq
         # chi2 = np.sum(np.square((shapes - self._shapes) / self.kwargs['error_estimate']), axis=0)
         # dof = shapes.size
-        chi2_l = np.square((shapes - self._shapes) / self.kwargs['error_estimate'])
+        chi2_l = np.square((shapes - self._shapes) / (self.kwargs['error_estimate'] * self._errors))
         indx = ~np.any(chi2_l != chi2_l, axis=1)
         chi2 = np.sum(chi2_l[indx], axis=0)
         dof = sum(indx)

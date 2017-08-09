@@ -199,7 +199,7 @@ def hsm(star, logger=None):
 
     return flux, center.x, center.y, sigma, shape.g1, shape.g2, flag
 
-def hsm_error(star, logger=None):
+def hsm_error(star, logger=None, return_debug=False):
     """ Use python implementation of HSM to measure higher order moments of star image to get errors.
 
     Slow since it's python, not C, but we should only have to do this once per star.
@@ -236,7 +236,6 @@ def hsm_error(star, logger=None):
     e1 = e1_norm * e0
     e2 = e2_norm * e0
 
-    flux_hsm, u0_hsm, v0_hsm, size_hsm, g1_hsm, g2_hsm, flag_hsm = hsm(star)
 
 
     # get vectors for data, weight and u, v
@@ -249,10 +248,11 @@ def hsm_error(star, logger=None):
 
     # normalization for the various sums over pixels
     normalization = np.sum(data_v * wuse_v * kernel_v)
+    flux_calc = normalization
     normalization2 = normalization * normalization
 
     # use flux and calculate its error from star_model - noise-free Gaussian matched to the data
-    flux_calc = star_model.flux
+    flux = star_model.flux
 
     star_model_wgt = star_model.weight.array
     star_model_sdata2 = 1. / star_model_wgt
@@ -290,35 +290,57 @@ def hsm_error(star, logger=None):
     # TODO: what is the scale of these different errors?
 
     # three terms: those proportional to: sdata_v, sigma_u0 and sigma_v0, and sigma_flux
-    sigma2_e0 = np.sum(np.power(sdata_v * wuse_v * kernel_v * (du_v * du_v + dv_v * dv_v), 2)) / normalization2
+    sigma2_e0_data = np.sum(np.power(sdata_v * wuse_v * kernel_v * (du_v * du_v + dv_v * dv_v), 2)) / normalization2
     # TODO: should this have the /2?
-    sigma2_e1 = np.sum(np.power(sdata_v * wuse_v * kernel_v * (du_v * du_v - dv_v * dv_v) / 2., 2)) / normalization2
-    sigma2_e2 = np.sum(np.power(sdata_v * wuse_v * kernel_v * (du_v * dv_v), 2)) / normalization2
+    sigma2_e1_data = np.sum(np.power(sdata_v * wuse_v * kernel_v * (du_v * du_v - dv_v * dv_v) / 2., 2)) / normalization2
+    sigma2_e2_data = np.sum(np.power(sdata_v * wuse_v * kernel_v * (du_v * dv_v), 2)) / normalization2
 
     # add sigma_u0, sigma_v0
     # TODO: should this have the *2?
-    sigma2_e0 = sigma2_e0 + np.sum(np.power(2. * du_v * data_v * wuse_v * kernel_v * sigma_u0, 2) + np.power(2. * dv_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
-    sigma2_e1 = sigma2_e1 + np.sum(np.power(du_v * data_v * wuse_v * kernel_v * sigma_u0, 2) + np.power(dv_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
-    sigma2_e2 = sigma2_e2 + np.sum(np.power(dv_v * data_v * wuse_v * kernel_v * sigma_u0, 2) + np.power(du_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
+    sigma2_e0_u0 = np.sum(np.power(2. * du_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
+    sigma2_e0_v0 = np.sum(np.power(2. * dv_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
+    sigma2_e1_u0 = np.sum(np.power(du_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
+    sigma2_e1_v0 = np.sum(np.power(dv_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
+    sigma2_e2_u0 = np.sum(np.power(dv_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
+    sigma2_e2_v0 = np.sum(np.power(du_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
 
     # add sigma_flux
-    sigma2_e0 = sigma2_e0 + np.power(e0_calc * sigma_flux / normalization, 2)
-    sigma2_e1 = sigma2_e1 + np.power(e1_calc * sigma_flux / normalization, 2)
-    sigma2_e2 = sigma2_e2 + np.power(e2_calc * sigma_flux / normalization, 2)
+    sigma2_e0_flux = np.power(e0_calc * sigma_flux / normalization, 2)
+    sigma2_e1_flux = np.power(e1_calc * sigma_flux / normalization, 2)
+    sigma2_e2_flux = np.power(e2_calc * sigma_flux / normalization, 2)
 
-    sigma_e0 = np.sqrt(sigma2_e0)
-    sigma_e1 = np.sqrt(sigma2_e1)
-    sigma_e2 = np.sqrt(sigma2_e2)
+    # TODO: sigma flux is not well behaved, so we have removed it until we figure that out
+    sigma_e0 = np.sqrt(sigma2_e0_data + sigma2_e0_u0 + sigma2_e0_v0 )  # + sigma2_e0_flux)
+    sigma_e1 = np.sqrt(sigma2_e1_data + sigma2_e1_u0 + sigma2_e1_v0 )  # + sigma2_e1_flux)
+    sigma_e2 = np.sqrt(sigma2_e2_data + sigma2_e2_u0 + sigma2_e2_v0 )  # + sigma2_e2_flux)
+
+    #####
+    # FUDGE VALUES
+    # in my experience (based on creating these for fixed noise level and measuring variance)
+    # the errors need these fudge factors.
+    # TODO: I do not understand the flux errors still. :(
+    #####
+
+    # TODO: should sigma_u0 and _v0 fudge factors be applied BEFORE they go into e0 etc?
+    sigma_u0 = sigma_u0 * 2.0
+    sigma_v0 = sigma_v0 * 2.0
+    sigma_e0 = sigma_e0 * 1.42
+    sigma_e1 = sigma_e1 * 2.0
+    sigma_e2 = sigma_e2 * 2.0
 
     if logger:
         logger.debug('Star hsm_error. Value of flux, u0, v0, e0, e1, e2 are:')
         logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux_calc, u0_calc, v0_calc, e0_calc, e1_calc, e2_calc))
         logger.debug('Star hsm_error. Value of Gaussian model flux, u0, v0, e0, e1, e2 are:')
         logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux, u0, v0, e0, e1, e2))
-        logger.debug('Star hsm_error. Value of regular hsm algorithm flux, u0, v0, e0, e1, e2 are:')
-        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux_hsm, u0_hsm, v0_hsm, e0_hsm, e1_hsm, e2_hsm))
         logger.debug('Star hsm_error. Value of errors for flux, u0, v0, e0, e1, e2 are:')
         logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2))
 
-    # TODO: when I feel confident about calculated values, do not return _calc
-    return sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2, flux_calc, u0_calc, v0_calc, e0_calc, e1_calc, e2_calc
+    if return_debug:
+        return sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2, \
+               flux_calc, u0_calc, v0_calc, e0_calc, e1_calc, e2_calc, \
+               sigma2_e0_data, sigma2_e0_u0, sigma2_e0_v0, sigma2_e0_flux, \
+               sigma2_e1_data, sigma2_e1_u0, sigma2_e1_v0, sigma2_e1_flux, \
+               sigma2_e2_data, sigma2_e2_u0, sigma2_e2_v0, sigma2_e2_flux
+    else:
+        return sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2

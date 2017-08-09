@@ -267,7 +267,7 @@ class Optical(Model):
         :returns: a new Star instance with the data field having an image of the drawn model.
         """
         import galsim
-        prof = self.getProfile(star.fit.params)
+        prof = self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
         center = galsim.PositionD(*star.fit.center)
         offset = star.data.image_pos + center - star.data.image.trueCenter()
         image = prof.drawImage(star.data.image.copy(), method='no_pixel', offset=offset)

@@ -31,6 +31,7 @@ def create_fit_dict():
 
     # input
     dir_path = os.path.dirname(os.path.realpath(__file__))
+    # TODO: update this!
     piff_dict['input'] = {
         'dir': dir_path + '/y1_test',
         'images': "DECam_00241238_%02d.fits.fz",
