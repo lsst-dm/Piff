@@ -232,7 +232,7 @@ class OpticalWavefrontPSF(PSF):
         Constant optical sigma or kolmogorov, g1, g2 in model
         misalignments in interpolant: these are the interp.misalignment terms
     """
-    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', logger=None):
+    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', cut_ccds=[], logger=None):
         """
 
         :param knn_file_name:               Fits file containing the wavefront
@@ -249,6 +249,7 @@ class OpticalWavefrontPSF(PSF):
                                             [default: [1e10, 1e10, 1e10], which should be >>> any measured values]
         :param fitter_kwargs:               kwargs to pass to fitter
         :param fitter_algorithm:            fitter to use for measuring wavefront. Default is minuit but also can use lmfit
+        :param cut_ccds:                    list of ccds to remove from decaminfo
         """
 
         self.interp_kwargs = {'n_neighbors': 15, 'algorithm': 'auto'}
@@ -261,7 +262,7 @@ class OpticalWavefrontPSF(PSF):
 
         if logger:
             logger.debug("Making DECamInfo")
-        self.decaminfo = DECamInfo()
+        self.decaminfo = DECamInfo(cut_ccds=cut_ccds)
 
         self.weights = np.array(weights)
         # normalize weights

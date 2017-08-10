@@ -21,8 +21,7 @@ input:
     # must specify in advance.
     # TODO: currently do not know how to create a list to get all the ccds
     # nimages: 5
-    # image_file_name: '/nfs/slac/g/ki/ki18/cpd/Projects/DES/Piff/tests/y1_test_dir/DECam_*_??.fits.fz'
-    image_file_name: '/nfs/slac/g/ki/ki18/cpd/Projects/DES/Piff/tests/y1_test_dir/DECam_*_02.fits.fz'
+    image_file_name: '/nfs/slac/g/ki/ki18/cpd/Projects/DES/Piff/tests/y1_test_dir/DECam_*_??.fits.fz'
     cat_file_name:
         type: Eval
         str: "image_file_name.replace('.fits.fz', '_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits')"
@@ -46,9 +45,9 @@ input:
     stamp_size: 31
 
     # use only some stars per ccd
-    nstars: 10
+    nstars: 200
     # cut poorly measured stars
-    min_snr: 10
+    min_snr: 20
     # limit star snr so we don't weight bright stars
     max_snr: 100
 
@@ -67,76 +66,77 @@ psf:
         knn_extname: 1
 
         # maximum number of steps to take
-        max_iterations: 10
+        max_iterations: 10000
 
         # if > 0, number of stars to use in fit
         n_fit_stars: 0
 
         # fudge factor in chi square until we fix errors in hsm
-        error_estimate: 0.001
+        error_estimate: 1
 
         engine: 'galsim_fast'
 
         template: 'des'
+        cut_ccds: [2, 31, 61]
 
         # ['minuit', or 'lmfit']
         fitter_algorithm: 'minuit'
 
         fitter_kwargs:
-            # fix_r0: False
-            # fix_g1: False
-            # fix_g2: False
-            # fix_z04d: False
-            # fix_z05d: False
-            # fix_z06d: False
-            # fix_z07d: False
-            # fix_z08d: False
-            # fix_z09d: False
-            # fix_z10d: False
-            # fix_z11d: True
-            # fix_z04x: True
-            # fix_z05x: True
-            # fix_z06x: True
-            # fix_z07x: False
-            # fix_z08x: False
-            # fix_z09x: True
-            # fix_z10x: True
-            # fix_z11x: True
-            # fix_z04y: True
-            # fix_z05y: True
-            # fix_z06y: True
-            # fix_z07y: False
-            # fix_z08y: False
-            # fix_z09y: True
-            # fix_z10y: True
-            # fix_z11y: True
             fix_r0: False
-            fix_g1: True
-            fix_g2: True
+            fix_g1: False
+            fix_g2: False
             fix_z04d: False
-            fix_z05d: True
-            fix_z06d: True
-            fix_z07d: True
-            fix_z08d: True
-            fix_z09d: True
-            fix_z10d: True
+            fix_z05d: False
+            fix_z06d: False
+            fix_z07d: False
+            fix_z08d: False
+            fix_z09d: False
+            fix_z10d: False
             fix_z11d: True
             fix_z04x: True
             fix_z05x: True
             fix_z06x: True
-            fix_z07x: True
-            fix_z08x: True
+            fix_z07x: False
+            fix_z08x: False
             fix_z09x: True
             fix_z10x: True
             fix_z11x: True
             fix_z04y: True
             fix_z05y: True
             fix_z06y: True
-            fix_z07y: True
-            fix_z08y: True
+            fix_z07y: False
+            fix_z08y: False
             fix_z09y: True
             fix_z10y: True
             fix_z11y: True
+            # fix_r0: False
+            # fix_g1: True
+            # fix_g2: True
+            # fix_z04d: False
+            # fix_z05d: True
+            # fix_z06d: True
+            # fix_z07d: True
+            # fix_z08d: True
+            # fix_z09d: True
+            # fix_z10d: True
+            # fix_z11d: True
+            # fix_z04x: True
+            # fix_z05x: True
+            # fix_z06x: True
+            # fix_z07x: True
+            # fix_z08x: True
+            # fix_z09x: True
+            # fix_z10x: True
+            # fix_z11x: True
+            # fix_z04y: True
+            # fix_z05y: True
+            # fix_z06y: True
+            # fix_z07y: True
+            # fix_z08y: True
+            # fix_z09y: True
+            # fix_z10y: True
+            # fix_z11y: True
 
     atmopsf:
         # This type of PSF will use a separate model/interp solution for each chip.
@@ -195,8 +195,8 @@ output:
         -
             type: TwoDHist
             file_name: "DECam_00241238_twodhist.png"
-            number_bins_u: 20
-            number_bins_v: 20
+            number_bins_u: 30
+            number_bins_v: 30
 
 # Set the verbosity level a little higher than default (1) to give extra information
 # about the progress.

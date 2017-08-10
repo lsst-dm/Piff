@@ -107,16 +107,24 @@ class DECamInfo(object):
 
         return DECamInfo._infoDict
 
-    def _getinfoArray(self):
-        vals = np.zeros((71, 2))
+    def _getinfoArray(self, cut_ccds=[]):
+        vals = np.zeros((len(self.infoDict) - len(cut_ccds), 2))
         for key in self.infoDict:
             infoDict = self.infoDict[key]
-            vals[infoDict['chipnum']][0] = infoDict['xCenter']
-            vals[infoDict['chipnum']][1] = infoDict['yCenter']
+            chipnum = infoDict['chipnum']
+            # with latest Piff we must adjust the chipnum to the cut_ccds
+            # we start with -1, because piff property chipnum 0 = first chip
+            # and then we -1 for the number of cut_ccds chipnum is greater than
+            # if this chipnum is in cut_ccds, continue
+            if chipnum in cut_ccds:
+                continue
+            chipnum_cut = chipnum - 1 - sum([chipnum > ccd for ccd in cut_ccds])
+            vals[chipnum_cut][0] = infoDict['xCenter']
+            vals[chipnum_cut][1] = infoDict['yCenter']
         return vals
 
 
-    def __init__(self,**inputDict):
+    def __init__(self,cut_ccds=[], **inputDict):
 
         self.infoDict
         self.mmperpixel = 0.015
@@ -128,7 +136,7 @@ class DECamInfo(object):
             self.ccddict.update(
                 {self.infoDict[keyi]['chipnum']: keyi}
                 )
-        self.infoArr = self._getinfoArray()
+        self.infoArr = self._getinfoArray(cut_ccds)
         # get edges.
         pixHalfSize = 1024 * np.ones(self.infoArr.shape) * self.mmperpixel
         # for < 63, y is 2x bigger than x
