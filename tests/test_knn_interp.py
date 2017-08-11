@@ -164,8 +164,6 @@ def test_disk():
 
 @timer
 def test_decam_wavefront():
-    # TODO: delete?
-    # file_name = 'wavefront_test/Science-20121120s1-v20i2_noextname.fits'
     # extname = 1
     file_name = 'input/Science-20121120s1-v20i2.fits'
     extname = 'Science-20121120s1-v20i2'
@@ -220,8 +218,6 @@ def test_decam_wavefront():
 
 @timer
 def test_decam_disk():
-    # TODO: delete?
-    # file_name = 'wavefront_test/Science-20121120s1-v20i2_noextname.fits'
     # extname = 1
     file_name = 'input/Science-20121120s1-v20i2.fits'
     extname = 'Science-20121120s1-v20i2'

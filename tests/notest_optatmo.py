@@ -31,12 +31,15 @@ def create_fit_dict():
 
     # input
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    # TODO: update this!
+    # TODO: update this! It is OK if we only use a single CCD for testing.
     piff_dict['input'] = {
-        'dir': dir_path + '/y1_test',
-        'images': "DECam_00241238_%02d.fits.fz",
-        'cats': "DECam_00241238_%02d_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits",
-        'chipnums': "[ c for c in range(1,63) if c is not 61 and c is not 31 ]",
+        'dir': dir_path + '/input',
+        'image_file_name': "DECam_00241238_??.fits.fz",
+        'cat_file_name': {
+            'type': 'Eval',
+            'str': "image_file_name.replace('.fits.fz', '_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits')",
+            'simage_file_name': '@input.image_file_name',
+            },
 
         # What hdu is everything in?
         'image_hdu': 1,
@@ -64,7 +67,7 @@ def create_fit_dict():
         'optpsf': {
             'type': 'OpticalWavefront',
 
-            'knn_file_name': dir_path + '/wavefront_test/Science-20121120s1-v20i2_noextname.fits',
+            'knn_file_name': dir_path + '/input/Science-20121120s1-v20i2.fits',
             'knn_extname': 1,
             'max_iterations': 100,
             'n_fit_stars': 50,
