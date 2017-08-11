@@ -232,7 +232,7 @@ class OpticalWavefrontPSF(PSF):
         Constant optical sigma or kolmogorov, g1, g2 in model
         misalignments in interpolant: these are the interp.misalignment terms
     """
-    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', cut_ccds=[], logger=None):
+    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', cut_ccds=[], guess_start=False, logger=None):
         """
 
         :param knn_file_name:               Fits file containing the wavefront
@@ -250,6 +250,7 @@ class OpticalWavefrontPSF(PSF):
         :param fitter_kwargs:               kwargs to pass to fitter
         :param fitter_algorithm:            fitter to use for measuring wavefront. Default is minuit but also can use lmfit
         :param cut_ccds:                    list of ccds to remove from decaminfo
+        :param guess_start:                 if True, will adjust fitter kwargs for best guess
         """
 
         self.interp_kwargs = {'n_neighbors': 15, 'algorithm': 'auto'}
@@ -286,6 +287,7 @@ class OpticalWavefrontPSF(PSF):
             'error_estimate': error_estimate,
             'template': template,
             'engine': engine,
+            'guess_start': guess_start,
             }
 
         # load up the model after kwargs are set
@@ -478,6 +480,12 @@ class OpticalWavefrontPSF(PSF):
             self._fit_profiles = [profile for profile, ind in zip(self._fit_profiles, indx) if ind]
         else:
             self._fit_profiles = None
+
+        if self.kwargs['guess_start']:
+            r0_guess = (np.mean(self._shapes[:, 0]) / 0.004) ** -0.5
+            if logger:
+                logger.info('Adjusting r0 to best fit guess of {0} from average size of {1}'.format(r0_guess, np.mean(self._shapes[:, 0])))
+            self.fitter_kwargs['r0'] = r0_guess
 
     def fit(self, stars, wcs, pointing,
             profiles=[], logger=None):
