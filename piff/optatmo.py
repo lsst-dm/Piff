@@ -332,7 +332,7 @@ class OpticalWavefrontPSF(PSF):
                 'throw_nan': False,
                 'pedantic': True,
                 'print_level': 2,
-                'errordef': 0.5,  # guesstimated
+                'errordef': 1.0,  # guesstimated
                 })
         else:
             raise NotImplementedError('fitter {0} not implemented.'.format(self.kwargs['fitter_algorithm']))
@@ -343,6 +343,38 @@ class OpticalWavefrontPSF(PSF):
         self._update_psf_params(**self.fitter_kwargs)
 
         self._time = time()
+
+        self.step_sizes = [
+            1e-4, 1e-4, 1e-4,  # sizes
+            1e-3, 1e-5, 1e-5,  # z04
+            1e-3, 1e-5, 1e-5,  # z05
+            1e-3, 1e-5, 1e-5,  # z06
+            1e-3, 1e-5, 1e-5,  # z07
+            1e-3, 1e-5, 1e-5,  # z08
+            1e-3, 1e-5, 1e-5,  # z09
+            1e-3, 1e-5, 1e-5,  # z10
+            1e-3, 1e-5, 1e-5,  # z11
+                ]
+        self.keys = [
+            'r0', 'g1', 'g2',
+            'z04d', 'z04x', 'z04y',
+            'z05d', 'z05x', 'z05y',
+            'z06d', 'z06x', 'z06y',
+            'z07d', 'z07x', 'z07y',
+            'z08d', 'z08x', 'z08y',
+            'z09d', 'z09x', 'z09y',
+            'z10d', 'z10x', 'z10y',
+            'z11d', 'z11x', 'z11y',
+                ]
+
+        # stencil values
+        # 5 point stencil
+        # self.stencil = [-2, -1, 1, 2]
+        # self.stencil_values = [1. / 12, -8. / 12, 8. / 12, -1. / 12]
+        # 3 point stencil
+        self.stencil = [-1, 1]
+        self.stencil_values = [-1. / 2, 1. / 2]
+
 
     def disable_atmosphere(self, logger=None):
         """Disable atmosphere within OpticalWavefrontPSF"""
@@ -496,6 +528,8 @@ class OpticalWavefrontPSF(PSF):
                 logger.info('Adjusting r0 to best fit guess of {0} from average size of {1}'.format(r0_guess, np.mean(self._shapes[:, 0])))
             self.fitter_kwargs['r0'] = r0_guess
 
+        self._logger = logger
+
     def fit(self, stars, wcs, pointing,
             profiles=[], logger=None):
         """Fit interpolated PSF model to star data using standard sequence of operations.
@@ -530,10 +564,7 @@ class OpticalWavefrontPSF(PSF):
 
         if logger:
             logger.debug("Creating minuit object")
-            self._logger = logger
-        else:
-            self._logger = None
-        self._minuit = Minuit(self._fit_func, **self.fitter_kwargs)
+        self._minuit = Minuit(self._fit_func, grad_fcn=self._grad_func_minuit, forced_parameters=self.keys, **self.fitter_kwargs)
         # run the fit and solve! This will update the interior parameters
         if logger:
             logger.info("Running migrad for {0} steps!".format(self.kwargs['max_iterations']))
@@ -636,6 +667,240 @@ class OpticalWavefrontPSF(PSF):
                 # old misalignment could be None on first iteration
                 logger.debug('New misalignment is \n{0}'.format(misalignment_print))
 
+    def chi2(self, stars, full=False, logger=None):
+        # using shapes, return chi2 of model
+        shapes = self._measure_shapes(self.drawStarList(self._fit_stars), logger=logger)
+
+        # calculate chisq
+        # chi2 = np.sum(np.square((shapes - self._shapes) / self.kwargs['error_estimate']), axis=0)
+        # dof = shapes.size
+        chi2_l = np.square((shapes - self._shapes) / (self.kwargs['error_estimate'] * self._errors))
+        indx = ~np.any(chi2_l != chi2_l, axis=1)
+        chi2 = np.sum(chi2_l[indx], axis=0)
+        dof = sum(indx)
+        chi2_sum = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
+
+        if logger:
+            if sum(indx) != len(indx):
+                logger.info('Warning! We are using {0} stars out of {1} stars at step {2} of fit'.format(sum(indx), len(indx), self._n_iter))
+            logger.debug('chi2 array:')
+            logger.debug('chi2 summed: {0}'.format(chi2_sum))
+            logger.debug('chi2 in each shape: {0}'.format(chi2))
+            logger.debug('chi2 with weights: {0}'.format(self.weights * chi2))
+            logger.debug('sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
+            logger.debug('chi2 for each star:\n{0}'.format(chi2_l))
+
+        if full:
+            return chi2_sum, dof, chi2, indx, chi2_l
+        else:
+            return chi2_sum
+
+    def _grad_func(self,
+                   r0, g1, g2,
+                   z04d, z04x, z04y,
+                   z05d, z05x, z05y,
+                   z06d, z06x, z06y,
+                   z07d, z07x, z07y,
+                   z08d, z08x, z08y,
+                   z09d, z09x, z09y,
+                   z10d, z10x, z10y,
+                   z11d, z11x, z11y,
+                   ):
+        """Let's be smarter than is wise.
+        Fundamentally this is what we are testing:
+            d e_i / d delta = d e_i / d z d z / d delta
+            d e_i / d theta = d e_i / d z d z / d theta
+
+        but z = z0 + delta + theta x
+        so d z / d delta = 1, d z / d theta = x
+
+        therefore, for the delta terms, all I have to do is calculate d ei / d delta and I get the x and y terms for free!
+        """
+        logger = self._logger
+
+
+        gradients_l = []
+
+        # extract focal coordinates
+        fx = []
+        fy = []
+        for star in self._fit_stars:
+            fx.append(star.data.properties['focal_x'])
+            fy.append(star.data.properties['focal_y'])
+        fx = np.array(fx)
+        fy = np.array(fy)
+
+        # step through each parameter
+        for key, step_size in zip(self.keys, self.step_sizes):
+
+            if self.fitter_kwargs['fix_{0}'.format(key)]:
+                # if a parameter is fixed, skip calculating it!
+                gradients_l.append(np.zeros((len(self._fit_stars), 3)))
+
+            elif key[0] == 'z' and (key[-1] == 'x' or key[-1] == 'y'):
+                # TODO: can go bad if we fixed delta but not x and y
+                if key[-1] == 'x':
+                    gradients_l.append(gradients_l[-1] * fy[:, None])
+                elif key[-1] == 'y':
+                    gradients_l.append(gradients_l[-2] * fx[:, None])
+
+            else:
+                stencil_chi2_l = []
+
+                # step through stencil
+                for term, value in zip(self.stencil, self.stencil_values):
+                    params = dict(r0=r0, g1=g1, g2=g2,
+                                  z04d=z04d, z04x=z04x, z04y=z04y,
+                                  z05d=z05d, z05x=z05x, z05y=z05y,
+                                  z06d=z06d, z06x=z06x, z06y=z06y,
+                                  z07d=z07d, z07x=z07x, z07y=z07y,
+                                  z08d=z08d, z08x=z08x, z08y=z08y,
+                                  z09d=z09d, z09x=z09x, z09y=z09y,
+                                  z10d=z10d, z10x=z10x, z10y=z10y,
+                                  z11d=z11d, z11x=z11x, z11y=z11y,
+                                  logger=logger)
+                    params[key] = params[key] + term * step_size
+
+                    # update psf
+                    self._update_psf_params(**params)
+                    chi2_sum, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
+
+                    stencil_chi2_l.append(value * chi2_l)
+
+                # get slope
+                gradients_l.append(np.sum(stencil_chi2_l, axis=0) / step_size)
+
+        gradients_l = np.array(gradients_l)
+        # convert gradients_l into gradients
+        # recall that chi2_sum = np.sum(self.weights * np.sum(chi2_l[indx], axis=0)) * 1. / sum(indx) / np.sum(self.weights)
+        gradients = np.sum(self.weights[None] * np.nansum(gradients_l, axis=1), axis=1) * 1. / len(self._fit_stars) / np.sum(self.weights)
+
+        if logger:
+            log = ['\n',
+                    '**************************************************************************************\n',
+                    '* time        \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
+                    '**************************************************************************************\n',
+                    '*         \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
+                    '**************************************************************************************\n',
+                    '* d chi2 d size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[0], gradients[1], gradients[2]),
+                    '* d chi2 d z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[3], gradients[4], gradients[5]),
+                    '* d chi2 d z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[6], gradients[7], gradients[8]),
+                    '* d chi2 d z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[9], gradients[10], gradients[11]),
+                    '* d chi2 d z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[12], gradients[13], gradients[14]),
+                    '* d chi2 d z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[15], gradients[16], gradients[17]),
+                    '* d chi2 d z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[18], gradients[19], gradients[20]),
+                    '* d chi2 d z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[21], gradients[22], gradients[23]),
+                    '* d chi2 d z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[24], gradients[25], gradients[26]),
+                    '**************************************************************************************\n',
+                    ]
+            logger.info(''.join(log))
+
+
+        return gradients, gradients_l
+
+    def _grad_func_all(self,
+                   r0, g1, g2,
+                   z04d, z04x, z04y,
+                   z05d, z05x, z05y,
+                   z06d, z06x, z06y,
+                   z07d, z07x, z07y,
+                   z08d, z08x, z08y,
+                   z09d, z09x, z09y,
+                   z10d, z10x, z10y,
+                   z11d, z11x, z11y,
+                   ):
+
+        logger = self._logger
+
+
+        gradients = []
+        gradients_l = []
+
+        # step through each parameter
+        for key, step_size in zip(self.keys, self.step_sizes):
+
+            # if a parameter is fixed, skip calculating it!
+            if self.fitter_kwargs['fix_{0}'.format(key)]:
+                gradients.append(0)
+                gradients_l.append(np.zeros((len(self._fit_stars), 3)))
+
+            else:
+                stencil_chi2 = []
+                stencil_chi2_l = []
+
+                # step through stencil
+                for term, value in zip(self.stencil, self.stencil_values):
+                    params = dict(r0=r0, g1=g1, g2=g2,
+                                  z04d=z04d, z04x=z04x, z04y=z04y,
+                                  z05d=z05d, z05x=z05x, z05y=z05y,
+                                  z06d=z06d, z06x=z06x, z06y=z06y,
+                                  z07d=z07d, z07x=z07x, z07y=z07y,
+                                  z08d=z08d, z08x=z08x, z08y=z08y,
+                                  z09d=z09d, z09x=z09x, z09y=z09y,
+                                  z10d=z10d, z10x=z10x, z10y=z10y,
+                                  z11d=z11d, z11x=z11x, z11y=z11y,
+                                  logger=logger)
+                    params[key] = params[key] + term * step_size
+
+                    # update psf
+                    self._update_psf_params(**params)
+                    chi2_sum, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
+
+                    stencil_chi2.append(value * chi2_sum)
+                    stencil_chi2_l.append(value * chi2_l)
+
+                # get slope
+                gradients.append(sum(stencil_chi2) / step_size)
+                gradients_l.append(np.sum(stencil_chi2_l, axis=0) / step_size)
+
+        if logger:
+            log = ['\n',
+                    '**************************************************************************************\n',
+                    '* time        \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
+                    '**************************************************************************************\n',
+                    '*         \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
+                    '**************************************************************************************\n',
+                    '* d chi2 d size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[0], gradients[1], gradients[2]),
+                    '* d chi2 d z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[3], gradients[4], gradients[5]),
+                    '* d chi2 d z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[6], gradients[7], gradients[8]),
+                    '* d chi2 d z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[9], gradients[10], gradients[11]),
+                    '* d chi2 d z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[12], gradients[13], gradients[14]),
+                    '* d chi2 d z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[15], gradients[16], gradients[17]),
+                    '* d chi2 d z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[18], gradients[19], gradients[20]),
+                    '* d chi2 d z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[21], gradients[22], gradients[23]),
+                    '* d chi2 d z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[24], gradients[25], gradients[26]),
+                    '**************************************************************************************\n',
+                    ]
+            logger.info(''.join(log))
+
+
+        return gradients, np.array(gradients_l)
+
+    def _grad_func_minuit(self,
+                   r0, g1, g2,
+                   z04d, z04x, z04y,
+                   z05d, z05x, z05y,
+                   z06d, z06x, z06y,
+                   z07d, z07x, z07y,
+                   z08d, z08x, z08y,
+                   z09d, z09x, z09y,
+                   z10d, z10x, z10y,
+                   z11d, z11x, z11y,
+                   ):
+
+        gradients, gradients_l = self._grad_func(
+                   r0, g1, g2,
+                   z04d, z04x, z04y,
+                   z05d, z05x, z05y,
+                   z06d, z06x, z06y,
+                   z07d, z07x, z07y,
+                   z08d, z08x, z08y,
+                   z09d, z09x, z09y,
+                   z10d, z10x, z10y,
+                   z11d, z11x, z11y)
+
+        return gradients
+
     def _fit_func(self,
                   r0, g1, g2,
                   z04d, z04x, z04y,
@@ -662,17 +927,8 @@ class OpticalWavefrontPSF(PSF):
                                 logger=logger,
                                 )
 
-        # get shapes
+        chi2_sum, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
 
-        shapes = self._measure_shapes(self.drawStarList(self._fit_stars),)# logger=logger)
-
-        # calculate chisq
-        # chi2 = np.sum(np.square((shapes - self._shapes) / self.kwargs['error_estimate']), axis=0)
-        # dof = shapes.size
-        chi2_l = np.square((shapes - self._shapes) / (self.kwargs['error_estimate'] * self._errors))
-        indx = ~np.any(chi2_l != chi2_l, axis=1)
-        chi2 = np.sum(chi2_l[indx], axis=0)
-        dof = sum(indx)
         if logger:
             log = ['\n',
                     '*******************************************************************************\n',
@@ -698,16 +954,6 @@ class OpticalWavefrontPSF(PSF):
             else:
                 logger.info(''.join(log))
         self._n_iter += 1
-        chi2_sum = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
-        if logger:
-            if sum(indx) != len(indx):
-                logger.debug('Warning! We are using {0} stars out of {1} stars'.format(sum(indx), len(indx)))
-            logger.debug('chi2 array:')
-            logger.debug('chi2 summed: {0}'.format(chi2_sum))
-            logger.debug('chi2 in each shape: {0}'.format(chi2))
-            logger.debug('chi2 with weights: {0}'.format(self.weights * chi2))
-            logger.debug('sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
-            logger.debug('chi2 for each star:\n{0}'.format(chi2_l))
         return chi2_sum
 
     def drawStarList(self, stars):
