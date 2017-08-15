@@ -108,19 +108,12 @@ class DECamInfo(object):
         return DECamInfo._infoDict
 
     def _getinfoArray(self, cut_ccds=[]):
-        vals = np.zeros((len(self.infoDict) - len(cut_ccds), 2))
+        vals = np.zeros((len(self.infoDict) + 30, 2))
         for key in self.infoDict:
             infoDict = self.infoDict[key]
             chipnum = infoDict['chipnum']
-            # with latest Piff we must adjust the chipnum to the cut_ccds
-            # we start with -1, because piff property chipnum 0 = first chip
-            # and then we -1 for the number of cut_ccds chipnum is greater than
-            # if this chipnum is in cut_ccds, continue
-            if chipnum in cut_ccds:
-                continue
-            chipnum_cut = chipnum - 1 - sum([chipnum > ccd for ccd in cut_ccds])
-            vals[chipnum_cut][0] = infoDict['xCenter']
-            vals[chipnum_cut][1] = infoDict['yCenter']
+            vals[chipnum][0] = infoDict['xCenter']
+            vals[chipnum][1] = infoDict['yCenter']
         return vals
 
 

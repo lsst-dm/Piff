@@ -113,10 +113,11 @@ class OptAtmoPSF(PSF):
             nremoved = self.optpsf.kwargs['n_fit_stars'] - len(self.optpsf._fit_stars)
         else:
             nremoved = len(self.stars) - len(self.optpsf._fit_stars)
-        if nremoved > 0:
-            logger.warning("Removed {0} stars in OpticalWavefrontPSF fit".format(nremoved))
-        else:
-            logger.info("Removed no stars in OpticalWavefrontPSF fit")
+        if logger:
+            if nremoved > 0:
+                logger.warning("Removed {0} stars in OpticalWavefrontPSF fit".format(nremoved))
+            else:
+                logger.info("Removed no stars in OpticalWavefrontPSF fit")
 
         # disable r0,g1,g2 from OpticalWavefrontPSF, since AtmoPSF deals with those bits.
         self.optpsf.disable_atmosphere(logger=logger)
@@ -125,6 +126,8 @@ class OptAtmoPSF(PSF):
         if logger:
             logger.info("Extracting OpticalWavefrontPSF profiles")
         profiles = [self.optpsf.getProfile(star) for star in self.stars]
+        # try cleaning out starfits
+        self.stars = [Star(star.data, None) for star in self.stars]
 
         # fit AtmoPSF
         if logger:
@@ -134,10 +137,11 @@ class OptAtmoPSF(PSF):
 
         # update stars from outlier rejection
         nremoved = len(self.stars) - len(self.atmopsf.stars)
-        if nremoved > 0:
-            logger.warning("Removed {0} stars in AtmospherePSF fit".format(nremoved))
-        else:
-            logger.info("Removed no stars in AtmospherePSF fit")
+        if logger:
+            if nremoved > 0:
+                logger.warning("Removed {0} stars in AtmospherePSF fit".format(nremoved))
+            else:
+                logger.info("Removed no stars in AtmospherePSF fit")
 
         try:
             chisq = np.sum([s.fit.chisq for s in self.stars])
@@ -168,11 +172,12 @@ class OptAtmoPSF(PSF):
         profs = []
         for psf_i in self.psfs:
             # TODO: do I need to pass in gsparams?
-            profs.append(psf_i.getProfile(star))
+            prof = psf_i.getProfile(star)
+            profs.append(prof)
             params.append(psf_i.getParams(star))
         params = np.hstack(params)
 
-        # draw star
+        # draw star by convolving profiles
         prof = galsim.Convolve(profs)
         image = star.image.copy()
         # TODO: method == pixel?
@@ -347,12 +352,6 @@ class OpticalWavefrontPSF(PSF):
         # double plus sure we disable it
         self.model.kwargs['r0'] = None
         self.model.kolmogorov_kwargs['r0'] = None
-        # TODO: I think we want to keep the keys in, for reasons.
-        # for key in self.model.required_kolmogorov_kwargs:
-        #     if key in self.model.kolmogorov_kwargs:
-        #         self.model.kolmogorov_kwargs.pop(key)
-        #     if key in self.model.kwargs:
-        #         self.model.kwargs.pop(key)
         self.model.g1 = None
         self.model.g2 = None
 
@@ -394,7 +393,8 @@ class OpticalWavefrontPSF(PSF):
         else:
             raise Exception('Invalid engine! {0}'.format(engine))
 
-    def _measure_shape_errors(self, stars, logger=None):
+    @staticmethod
+    def _measure_shape_errors(stars, logger=None):
         """Measure errors on galaxy shapes
         """
         errors = []
@@ -412,7 +412,8 @@ class OpticalWavefrontPSF(PSF):
         errors = np.array(errors)
         return errors
 
-    def _measure_shapes(self, stars, logger=None):
+    @staticmethod
+    def _measure_shapes(stars, logger=None):
         """Measure shapes using piff.util.hsm
         """
         shapes = []
@@ -452,8 +453,9 @@ class OpticalWavefrontPSF(PSF):
         convolve_profiles = len(profiles) and getattr(self.model, "getProfile", False)
 
         self._fit_stars = stars
+        choice = np.arange(len(stars))
         if self.kwargs['n_fit_stars'] and self.kwargs['n_fit_stars'] < len(self._fit_stars):
-            choice = np.random.choice(len(self._fit_stars), self.kwargs['n_fit_stars'])
+            choice = np.sort(np.random.choice(len(self._fit_stars), self.kwargs['n_fit_stars'], replace=False))
             self._fit_stars = [stars[i] for i in choice]
             if convolve_profiles:
                 self._fit_profiles = [profiles[i] for i in choice]
@@ -480,6 +482,13 @@ class OpticalWavefrontPSF(PSF):
             self._fit_profiles = [profile for profile, ind in zip(self._fit_profiles, indx) if ind]
         else:
             self._fit_profiles = None
+        # make use_stars
+        use_stars = np.in1d(np.arange(len(stars)), choice[indx], assume_unique=True)
+
+        # modify stars to include whether used in fit.
+        # This modifies both self.stars and stars
+        for star, use_star in zip(self.stars, use_stars):
+            star.data.properties['used_in_optical_wavefront'] = use_star
 
         if self.kwargs['guess_start']:
             r0_guess = (np.mean(self._shapes[:, 0]) / 0.004) ** -0.5
@@ -805,6 +814,7 @@ class OpticalWavefrontPSF(PSF):
         self.model.write(fits, extname + '_model', logger)
         if logger:
             logger.debug("Wrote the PSF model to extension %s",extname + '_model')
+
         self.interp.write(fits, extname + '_interp', logger)
         if logger:
             logger.debug("Wrote the PSF interp to extension %s",extname + '_interp')
