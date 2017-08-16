@@ -159,6 +159,45 @@ class OptAtmoPSF(PSF):
                 if logger:
                     logger.warn("Unable to produce chisq?!")
 
+    def getParams(self, star):
+        """Get params for a given star.
+
+        :param star:        Star instance holding information needed for interpolation as
+                            well as an image/WCS into which PSF will be rendered.
+
+        :returns:           Params
+        """
+        params = []
+        for psf_i in self.psfs:
+            params.append(psf_i.getParams(star))
+
+        # "convolve"
+        params = np.hstack(params)
+
+        return params
+
+    def getProfile(self, star):
+        """Get galsim profile for a given star.
+
+        :param star:        Star instance holding information needed for interpolation as
+                            well as an image/WCS into which PSF will be rendered.
+
+        :returns:           Galsim profile
+        """
+        import galsim
+
+        profs = []
+        for psf_i in self.psfs:
+            # TODO: do I need to pass in gsparams?
+            # TODO: do I need to apply shifts etc?
+            prof = psf_i.getProfile(star)
+            profs.append(prof)
+
+        # convolve
+        prof = galsim.Convolve(profs)
+
+        return prof
+
     def drawStar(self, star):
         """Generate PSF image for a given star.
 
@@ -167,18 +206,11 @@ class OptAtmoPSF(PSF):
 
         :returns:           Star instance with its image filled with rendered PSF
         """
-        import galsim
-        params = []
-        profs = []
-        for psf_i in self.psfs:
-            # TODO: do I need to pass in gsparams?
-            prof = psf_i.getProfile(star)
-            profs.append(prof)
-            params.append(psf_i.getParams(star))
-        params = np.hstack(params)
 
-        # draw star by convolving profiles
-        prof = galsim.Convolve(profs)
+        # get profile and params
+        prof = self.getProfile(star)
+        params = self.getParams(star)
+
         image = star.image.copy()
         # TODO: method == pixel?
         image = prof.drawImage(image, method='auto', offset=(star.image_pos-image.trueCenter()))
