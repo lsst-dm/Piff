@@ -26,7 +26,6 @@ from .model import Model, ModelFitError
 from .interp import Interp
 from .psf import PSF
 
-from .gsobject_model import Gaussian
 from .optical_model import Optical
 from .star import Star, StarFit, StarData
 # from .util import write_kwargs, read_kwargs, make_dtype, adjust_value
@@ -399,15 +398,6 @@ class OpticalWavefrontPSF(PSF):
             'z11d', 'z11x', 'z11y',
                 ]
 
-        # stencil values
-        # 5 point stencil
-        # self.stencil = [-2, -1, 1, 2]
-        # self.stencil_values = [1. / 12, -8. / 12, 8. / 12, -1. / 12]
-        # 3 point stencil
-        self.stencil = [-1, 1]
-        self.stencil_values = [-1. / 2, 1. / 2]
-
-
     def disable_atmosphere(self, logger=None):
         """Disable atmosphere within OpticalWavefrontPSF"""
         if logger:
@@ -468,7 +458,7 @@ class OpticalWavefrontPSF(PSF):
             try:
                 sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2 = hsm_error(star, logger=logger)
                 errors.append([sigma_e0, sigma_e1, sigma_e2])
-            except (ValueError, ModelFitError, RuntimeError) as e:
+            except (ValueError, ModelFitError, RuntimeError):
                 # hsm nan'd out
                 if logger:
                     logger.debug("Star failed moment parameter; setting errors to nan!")
@@ -727,17 +717,19 @@ class OpticalWavefrontPSF(PSF):
         else:
             return chi2_sum
 
-    def _grad_func(self,
-                   r0, g1, g2,
-                   z04d, z04x, z04y,
-                   z05d, z05x, z05y,
-                   z06d, z06x, z06y,
-                   z07d, z07x, z07y,
-                   z08d, z08x, z08y,
-                   z09d, z09x, z09y,
-                   z10d, z10x, z10y,
-                   z11d, z11x, z11y,
-                   ):
+    # TODO: stars, logger, option for doing all, fix, step_sizes, keys
+    # would be nice to make this a static function
+    def gradient(self, stars,
+                 r0, g1, g2,
+                 z04d, z04x, z04y,
+                 z05d, z05x, z05y,
+                 z06d, z06x, z06y,
+                 z07d, z07x, z07y,
+                 z08d, z08x, z08y,
+                 z09d, z09x, z09y,
+                 z10d, z10x, z10y,
+                 z11d, z11x, z11y,
+                 logger=None, calculate_all=False):
         """Let's be smarter than is wise.
         Fundamentally this is what we are testing:
             d e_i / d delta = d e_i / d z d z / d delta
@@ -747,11 +739,12 @@ class OpticalWavefrontPSF(PSF):
         so d z / d delta = 1, d z / d theta = x
 
         therefore, for the delta terms, all I have to do is calculate d ei / d delta and I get the x and y terms for free!
-        """
-        logger = self._logger
 
+        calculate_all will manually calculate gradients of "z*x" and "z*y" even though they are proportional to delta.
+        """
 
         gradients_l = []
+        stencils = []
 
         # extract focal coordinates
         fx = []
@@ -765,9 +758,13 @@ class OpticalWavefrontPSF(PSF):
         # step through each parameter
         for key, step_size in zip(self.keys, self.step_sizes):
 
-            if self.fitter_kwargs['fix_{0}'.format(key)]:
+            if calculate_all:
+                stencil_gradient = True
+
+            elif self.fitter_kwargs['fix_{0}'.format(key)]:
                 # if a parameter is fixed, skip calculating it!
                 gradients_l.append(np.zeros((len(self._fit_stars), 3)))
+                stencil_gradient = False
 
             elif key[0] == 'z' and (key[-1] == 'x' or key[-1] == 'y'):
                 # TODO: can go bad if we fixed delta but not x and y
@@ -775,12 +772,16 @@ class OpticalWavefrontPSF(PSF):
                     gradients_l.append(gradients_l[-1] * fy[:, None])
                 elif key[-1] == 'y':
                     gradients_l.append(gradients_l[-2] * fx[:, None])
+                stencil_gradient = False
 
             else:
+                stencil_gradient = True
+
+            if stencil_gradient:
                 stencil_chi2_l = []
 
-                # step through stencil
-                for term, value in zip(self.stencil, self.stencil_values):
+                # step through +- stencil stencil
+                for term in [1, -1]:
                     params = dict(r0=r0, g1=g1, g2=g2,
                                   z04d=z04d, z04x=z04x, z04y=z04y,
                                   z05d=z05d, z05x=z05x, z05y=z05y,
@@ -797,139 +798,67 @@ class OpticalWavefrontPSF(PSF):
                     self._update_psf_params(**params)
                     chi2_sum, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
 
-                    stencil_chi2_l.append(value * chi2_l)
+                    stencil_chi2_l.append(chi2_l)
 
                 # get slope
-                gradients_l.append(np.sum(stencil_chi2_l, axis=0) / step_size)
+                # fx = [f(x + h) - f(x - h)] / (2h)
+                stencil_values = np.array([0.5, -0.5])
+                stencil_chi2_l = np.array(stencil_chi2_l)  # (n_stencil, Nstar, Nshapes)
+                stencils.append(stencil_chi2_l)
+                gradients_l.append(np.sum(stencil_values[:, None, None] * stencil_chi2_l, axis=0) / step_size)
 
+        stencils = np.array(stencils)
         gradients_l = np.array(gradients_l)
         # convert gradients_l into gradients
         # recall that chi2_sum = np.sum(self.weights * np.sum(chi2_l[indx], axis=0)) * 1. / sum(indx) / np.sum(self.weights)
         gradients = np.sum(self.weights[None] * np.nansum(gradients_l, axis=1), axis=1) * 1. / len(self._fit_stars) / np.sum(self.weights)
 
-        if logger:
-            log = ['\n',
-                    '**************************************************************************************\n',
-                    '* time        \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
-                    '**************************************************************************************\n',
-                    '*         \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
-                    '**************************************************************************************\n',
-                    '* d chi2 d size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[0], gradients[1], gradients[2]),
-                    '* d chi2 d z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[3], gradients[4], gradients[5]),
-                    '* d chi2 d z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[6], gradients[7], gradients[8]),
-                    '* d chi2 d z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[9], gradients[10], gradients[11]),
-                    '* d chi2 d z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[12], gradients[13], gradients[14]),
-                    '* d chi2 d z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[15], gradients[16], gradients[17]),
-                    '* d chi2 d z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[18], gradients[19], gradients[20]),
-                    '* d chi2 d z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[21], gradients[22], gradients[23]),
-                    '* d chi2 d z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[24], gradients[25], gradients[26]),
-                    '**************************************************************************************\n',
-                    ]
-            logger.info(''.join(log))
-
-
-        return gradients, gradients_l
-
-    def _grad_func_all(self,
-                   r0, g1, g2,
-                   z04d, z04x, z04y,
-                   z05d, z05x, z05y,
-                   z06d, z06x, z06y,
-                   z07d, z07x, z07y,
-                   z08d, z08x, z08y,
-                   z09d, z09x, z09y,
-                   z10d, z10x, z10y,
-                   z11d, z11x, z11y,
-                   ):
-
-        logger = self._logger
-
-
-        gradients = []
-        gradients_l = []
-
-        # step through each parameter
-        for key, step_size in zip(self.keys, self.step_sizes):
-
-            # if a parameter is fixed, skip calculating it!
-            if self.fitter_kwargs['fix_{0}'.format(key)]:
-                gradients.append(0)
-                gradients_l.append(np.zeros((len(self._fit_stars), 3)))
-
-            else:
-                stencil_chi2 = []
-                stencil_chi2_l = []
-
-                # step through stencil
-                for term, value in zip(self.stencil, self.stencil_values):
-                    params = dict(r0=r0, g1=g1, g2=g2,
-                                  z04d=z04d, z04x=z04x, z04y=z04y,
-                                  z05d=z05d, z05x=z05x, z05y=z05y,
-                                  z06d=z06d, z06x=z06x, z06y=z06y,
-                                  z07d=z07d, z07x=z07x, z07y=z07y,
-                                  z08d=z08d, z08x=z08x, z08y=z08y,
-                                  z09d=z09d, z09x=z09x, z09y=z09y,
-                                  z10d=z10d, z10x=z10x, z10y=z10y,
-                                  z11d=z11d, z11x=z11x, z11y=z11y,
-                                  logger=logger)
-                    params[key] = params[key] + term * step_size
-
-                    # update psf
-                    self._update_psf_params(**params)
-                    chi2_sum, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
-
-                    stencil_chi2.append(value * chi2_sum)
-                    stencil_chi2_l.append(value * chi2_l)
-
-                # get slope
-                gradients.append(sum(stencil_chi2) / step_size)
-                gradients_l.append(np.sum(stencil_chi2_l, axis=0) / step_size)
-
-        if logger:
-            log = ['\n',
-                    '**************************************************************************************\n',
-                    '* time        \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
-                    '**************************************************************************************\n',
-                    '*         \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
-                    '**************************************************************************************\n',
-                    '* d chi2 d size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[0], gradients[1], gradients[2]),
-                    '* d chi2 d z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[3], gradients[4], gradients[5]),
-                    '* d chi2 d z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[6], gradients[7], gradients[8]),
-                    '* d chi2 d z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[9], gradients[10], gradients[11]),
-                    '* d chi2 d z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[12], gradients[13], gradients[14]),
-                    '* d chi2 d z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[15], gradients[16], gradients[17]),
-                    '* d chi2 d z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[18], gradients[19], gradients[20]),
-                    '* d chi2 d z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[21], gradients[22], gradients[23]),
-                    '* d chi2 d z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[24], gradients[25], gradients[26]),
-                    '**************************************************************************************\n',
-                    ]
-            logger.info(''.join(log))
-
-
-        return gradients, np.array(gradients_l)
+        return gradients, gradients_l, stencils, fx, fy
 
     def _grad_func_minuit(self,
-                   r0, g1, g2,
-                   z04d, z04x, z04y,
-                   z05d, z05x, z05y,
-                   z06d, z06x, z06y,
-                   z07d, z07x, z07y,
-                   z08d, z08x, z08y,
-                   z09d, z09x, z09y,
-                   z10d, z10x, z10y,
-                   z11d, z11x, z11y,
-                   ):
+                          r0, g1, g2,
+                          z04d, z04x, z04y,
+                          z05d, z05x, z05y,
+                          z06d, z06x, z06y,
+                          z07d, z07x, z07y,
+                          z08d, z08x, z08y,
+                          z09d, z09x, z09y,
+                          z10d, z10x, z10y,
+                          z11d, z11x, z11y,
+                          ):
 
-        gradients, gradients_l = self._grad_func(
-                   r0, g1, g2,
-                   z04d, z04x, z04y,
-                   z05d, z05x, z05y,
-                   z06d, z06x, z06y,
-                   z07d, z07x, z07y,
-                   z08d, z08x, z08y,
-                   z09d, z09x, z09y,
-                   z10d, z10x, z10y,
-                   z11d, z11x, z11y)
+        gradients, gradients_l, stencils, fx, fy = self.gradient(
+            self._fit_stars,
+            r0, g1, g2,
+            z04d, z04x, z04y,
+            z05d, z05x, z05y,
+            z06d, z06x, z06y,
+            z07d, z07x, z07y,
+            z08d, z08x, z08y,
+            z09d, z09x, z09y,
+            z10d, z10x, z10y,
+            z11d, z11x, z11y,
+            self._logger)
+
+        if self._logger:
+            log = ['\n',
+                    '**************************************************************************************\n',
+                    '* time        \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
+                    '**************************************************************************************\n',
+                    '*         \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
+                    '**************************************************************************************\n',
+                    '* d chi2 d size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[0], gradients[1], gradients[2]),
+                    '* d chi2 d z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[3], gradients[4], gradients[5]),
+                    '* d chi2 d z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[6], gradients[7], gradients[8]),
+                    '* d chi2 d z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[9], gradients[10], gradients[11]),
+                    '* d chi2 d z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[12], gradients[13], gradients[14]),
+                    '* d chi2 d z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[15], gradients[16], gradients[17]),
+                    '* d chi2 d z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[18], gradients[19], gradients[20]),
+                    '* d chi2 d z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[21], gradients[22], gradients[23]),
+                    '* d chi2 d z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[24], gradients[25], gradients[26]),
+                    '**************************************************************************************\n',
+                    ]
+            self._logger.info(''.join(log))
 
         return gradients
 
