@@ -270,6 +270,7 @@ class Optical(Model):
         prof = self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
         center = galsim.PositionD(*star.fit.center)
         offset = star.data.image_pos + center - star.data.image.trueCenter()
+        # TODO: should method be 'auto', not 'no_pixel'?
         image = prof.drawImage(star.data.image.copy(), method='no_pixel', offset=offset)
         # TODO: might need to update image pos?
         properties = star.data.properties.copy()

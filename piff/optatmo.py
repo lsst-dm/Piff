@@ -120,6 +120,9 @@ class OptAtmoPSF(PSF):
 
         # disable r0,g1,g2 from OpticalWavefrontPSF, since AtmoPSF deals with those bits.
         self.optpsf.disable_atmosphere(logger=logger)
+        if logger:
+            logger.debug("optpsf interp misalignment is")
+            logger.debug(self.optpsf.interp.misalignment)
 
         # extract profiles for AtmoPSF
         if logger:
@@ -211,7 +214,7 @@ class OptAtmoPSF(PSF):
         params = self.getParams(star)
 
         image = star.image.copy()
-        # TODO: method == pixel?
+        # TODO: method == pixel or no_pixel or auto?
         image = prof.drawImage(image, method='auto', offset=(star.image_pos-image.trueCenter()))
         # TODO: might need to update image pos?
         properties = star.data.properties.copy()
@@ -289,7 +292,8 @@ class OpticalWavefrontPSF(PSF):
         :param guess_start:                 if True, will adjust fitter kwargs for best guess
         """
 
-        self.interp_kwargs = {'n_neighbors': 15, 'algorithm': 'auto'}
+        # TODO: trying with distance weighting to 40 nearest neighbors
+        self.interp_kwargs = {'n_neighbors': 40, 'weights': 'distance', 'algorithm': 'auto'}
         self.interp_kwargs.update(interp_kwargs)
 
         # it turns out this part can also be slow!
@@ -371,7 +375,7 @@ class OpticalWavefrontPSF(PSF):
         # update with user kwargs
         self.fitter_kwargs.update(fitter_kwargs)
 
-        self._update_psf_params(**self.fitter_kwargs)
+        self._update_psf_params(logger=logger, **self.fitter_kwargs)
 
         self._time = time()
 
@@ -402,7 +406,7 @@ class OpticalWavefrontPSF(PSF):
         """Disable atmosphere within OpticalWavefrontPSF"""
         if logger:
             logger.info("Disabling atmosphere in OpticalWavefrontPSF")
-        self._update_psf_params(r0=None, g1=None, g2=None)
+        self._update_psf_params(r0=None, g1=None, g2=None, logger=logger)
         # double plus sure we disable it
         self.model.kwargs['r0'] = None
         self.model.kolmogorov_kwargs['r0'] = None
@@ -549,6 +553,9 @@ class OpticalWavefrontPSF(PSF):
             if logger:
                 logger.info('Adjusting r0 to best fit guess of {0} from average size of {1}'.format(r0_guess, np.mean(self._shapes[:, 0])))
             self.fitter_kwargs['r0'] = r0_guess
+            if logger:
+                logger.info('Starting analytic guesswork for fit.')
+            self._analytic_fit(logger)
 
         self._logger = logger
 
@@ -567,19 +574,246 @@ class OpticalWavefrontPSF(PSF):
 
         # based on fitter, do _minuit_fit or (TODO) _lmfit_fit
         if self.kwargs['fitter_algorithm'] == 'minuit':
-            self._minuit_fit(self._fit_stars,
-                             logger=logger)
+            self._minuit_fit(logger=logger)
         else:
             raise NotImplementedError('fitter {0} not yet implmented!'.format(self.kwargs['fitter_algorithm']))
 
-    def _minuit_fit(self, stars, logger=None):
+    def _stars_to_parameters(self, stars, logger=None):
+        """Takes in stars and returns their zernikes, u, v, and focal x and focal y coordinates.
+        """
+        zernikes = []
+        u = []
+        v = []
+        fx = []
+        fy = []
+
+        # need the interpolator to NOT be misaligned!
+        if np.sum(np.abs(self.interp.misalignment)) > 0:
+            if logger:
+                logger.warn('Warning! Resetting misalignment to zero!')
+            self.interp.misalignment = 0 * self.interp.misalignment
+
+        stars_interpolated = self.interp.interpolateList(self.decaminfo.pixel_to_focalList(stars))
+        for star in stars_interpolated:
+            zernikes.append(star.fit.params)
+            u.append(star.data.properties['u'])
+            v.append(star.data.properties['v'])
+            fx.append(star.data.properties['focal_x'])
+            fy.append(star.data.properties['focal_y'])
+        u = np.array(u)
+        v = np.array(v)
+        fx = np.array(fx)
+        fy = np.array(fy)
+        zernikes = np.array(zernikes)
+
+        return zernikes, u, v, fx, fy
+
+    @staticmethod
+    def _analytic_misalign_zernikes(zernikes, fx, fy, *vals):
+        """Given zernikes, positions, and misalignment vector, misalign zernikes"""
+
+        r0 = vals[0]
+        misalignments = np.array(vals[1:])
+        # stack r0
+        params = np.hstack(((r0 * np.ones(len(zernikes)))[:, None], zernikes))
+
+        # apply misalignment
+        misalignment_arr = misalignments.reshape(8, 3)
+        params[:, 1:] = params[:, 1:] + misalignment_arr[:, 0] + fx[:, None] * misalignment_arr[:, 2] + fy[:, None] * misalignment_arr[:, 1]
+        return params
+
+    @staticmethod
+    def _analytic_parameterization(params):
+        """Put [r0, zernikes] into a useful set of polynomials for analytic fit.
+
+        Assumes that params is shape [Nstars, r0 + zernikes]
+
+        returns the parameters and the names assocaited with the parameters
+        """
+        # Note that r0 means 1.01/r0**2 and zernikes are mult by 2!!
+        params = params.copy()
+        params[:, 0] = 1. / params[:, 0] ** 2
+        params[:, 0] = params[:, 0] * 0.01
+        params[:, 1:] = params[:, 1:] * 2
+        psq = []
+        pindx = []
+
+        param_names = ['r0'] + ['z{0:02d}'.format(i) for i in range(4, 12)]
+        # only allow up to quadratic in zernike, but allow r0 to be quartic
+        for pi in range(9):
+            psq.append(params[:, pi])
+            pindx.append([param_names[pi]])
+            for pj in range(pi, 9):
+                psq.append(params[:, pi] * params[:, pj])
+                pindx.append([param_names[pi], param_names[pj]])
+                if pi == 0:
+                    for pk in range(pj, 9):
+                        psq.append(params[:, pi] * params[:, pj] * params[:, pk])
+                        pindx.append([param_names[pi], param_names[pj], param_names[pk]])
+        psq = np.array(psq)
+        pindx = np.array(pindx)
+        return psq, pindx
+
+    @staticmethod
+    def _analytic_params_to_shapes(psq):
+        """These come from looking at a lasso linear regression. Hardcoded."""
+
+        """
+        e0 14 coeffs,
+        std lasso 6.71e-03 std full 5.91e-03
+        [None, None]:    +0.00e+00
+        0 ['r0']:    +4.23e-01
+        1 ['r0', 'r0']:    -3.71e-03
+        2 ['r0', 'r0', 'r0']:    -3.78e-04
+        19 ['r0', 'z04', 'z11']:    +1.24e-02
+        54 ['r0', 'z11', 'z11']:    +1.17e-02
+        56 ['z04', 'z04']:    +1.57e-02
+        63 ['z04', 'z11']:    +1.05e-02
+        65 ['z05', 'z05']:    +9.37e-03
+        73 ['z06', 'z06']:    +9.41e-03
+        80 ['z07', 'z07']:    +2.08e-02
+        86 ['z08', 'z08']:    +2.06e-02
+        91 ['z09', 'z09']:    +1.67e-02
+        95 ['z10', 'z10']:    +1.69e-02
+        98 ['z11', 'z11']:    +4.13e-02
+        """
+        e0 = psq[0] * 4.23e-1 + psq[1] * -3.71e-3 + psq[2] * -3.78e-4 + psq[19] * 1.24e-2 + psq[54] * 1.17e-2 + \
+             psq[56] * 1.57e-2 + psq[63] * 1.05e-2 + psq[65] * 9.37e-3 + psq[73] * 9.41e-3 + \
+             psq[80] * 2.08e-2 + psq[86] * 2.06e-2 + psq[91] * 1.67e-2 + psq[95] * 1.69e-2 + psq[98] * 4.13e-2
+
+        """
+        e1 14 coeffs,
+        std lasso 2.14e-03 std full 2.12e-03
+        [None, None]:    +0.00e+00
+        4 ['r0', 'r0', 'z05']:    +1.02e-06
+        6 ['r0', 'r0', 'z07']:    +8.45e-07
+        14 ['r0', 'z04', 'z06']:    +6.00e-04
+        34 ['r0', 'z06', 'z11']:    +3.31e-03
+        36 ['r0', 'z07', 'z07']:    -8.06e-04
+        38 ['r0', 'z07', 'z09']:    +1.22e-03
+        42 ['r0', 'z08', 'z08']:    +7.99e-04
+        44 ['r0', 'z08', 'z10']:    +1.14e-03
+        58 ['z04', 'z06']:    +9.91e-03
+        78 ['z06', 'z11']:    +6.72e-03
+        80 ['z07', 'z07']:    -1.72e-03
+        82 ['z07', 'z09']:    +1.30e-02
+        86 ['z08', 'z08']:    +1.74e-03
+        88 ['z08', 'z10']:    +1.33e-02
+        """
+        e1 = psq[4] * 1.02e-6 + psq[6] * 8.45e-7 + psq[14] * 6.0e-04 + psq[34] * 3.31e-3 + psq[36] * -8.06e-4 + \
+             psq[38] * 1.22e-3 + psq[42] * 7.99e-4 + psq[44] * 1.14e-3 + psq[58] * 9.91e-3 + psq[78] * 6.72e-3 + \
+             psq[80] * -1.72e-3 + psq[82] * 1.3e-2 + psq[86] * 1.74e-3 + psq[88] * 1.33e-2
+
+        """
+        e2 13 coeffs,
+        std lasso 2.25e-03 std full 2.23e-03
+        [None, None]:    +0.00e+00
+        2 ['r0', 'r0', 'r0']:    +3.30e-07
+        6 ['r0', 'r0', 'z07']:    +1.23e-05
+        9 ['r0', 'r0', 'z10']:    +3.79e-06
+        13 ['r0', 'z04', 'z05']:    +7.40e-04
+        27 ['r0', 'z05', 'z11']:    +3.09e-03
+        37 ['r0', 'z07', 'z08']:    +1.60e-03
+        39 ['r0', 'z07', 'z10']:    -1.17e-03
+        43 ['r0', 'z08', 'z09']:    +1.21e-03
+        57 ['z04', 'z05']:    +9.85e-03
+        71 ['z05', 'z11']:    +6.97e-03
+        81 ['z07', 'z08']:    +3.69e-03
+        83 ['z07', 'z10']:    -1.34e-02
+        87 ['z08', 'z09']:    +1.34e-02
+        """
+        e2 = psq[2] * 3.3e-7 + psq[6] * 1.23e-5 + psq[9] * 3.79e-6 + psq[13] * 7.4e-4 + psq[27] * 3.09e-3 + \
+             psq[37] * 1.6e-3 + psq[39] * -1.17e-3 + psq[43] * 1.21e-3 + psq[57] * 9.85e-3 + psq[71] * 6.97e-3 + \
+             psq[81] * 3.69e-3 + psq[83] * -1.34e-2 + psq[87] * 1.34e-2
+
+        shapes = np.vstack((e0, e1, e2)).T
+
+        return shapes
+
+    def _analytic_fit(self, logger=None):
+        """Fit interpolated PSF model to star data by analytic relation. Should get us pretty close.
+
+        :param logger:          A logger object for logging debug info. [default: None]
+
+        :returns guess_values:  Reasonable first guesses for misalignment
+        """
+        from scipy.optimize import minimize
+
+        zernikes, u, v, fx, fy = self._stars_to_parameters(self._fit_stars, logger=logger)
+
+        # dynamically define function based on fixed parameters
+        def chi2(vals_in):
+            # based on fitter_kwargs translate vals_in to the misalignments
+            vals = []
+            key_i = 0
+            for key in self.keys:
+                if key == 'g1' or key == 'g2':
+                    continue
+                if not self.fitter_kwargs['fix_' + key]:
+                    vals.append(vals_in[key_i])
+                    key_i += 1
+                else:
+                    vals.append(self.fitter_kwargs[key])
+
+            # apply misalignments
+            params = self._analytic_misalign_zernikes(zernikes, fx, fy, *vals)
+
+            # psq
+            psq, pindx = self._analytic_parameterization(params)
+
+            # shapes
+            model_shapes = self._analytic_params_to_shapes(psq)
+
+            # chi2 of each star and shape
+            chi2_long = np.sum((model_shapes - self._shapes) ** 2 / self._errors ** 2, axis=0)
+
+            # total chi2
+            chi_squared = np.sum(self.weights * chi2_long) / (3 * len(self._fit_stars) - len(vals_in)) / np.sum(self.weights)
+
+            return chi_squared
+
+        # get p0 based on fitter_kwargs
+        p0 = []
+        if logger:
+            logger.debug('Initial guess for analytic parameters:')
+        for key in self.keys:
+            if key == 'g1' or key == 'g2':
+                continue
+            if not self.fitter_kwargs['fix_' + key]:
+                val = self.fitter_kwargs[key]
+                p0.append(val)
+                if logger:
+                    logger.debug('{0}:\t{1:.2e}'.format(key, val))
+
+        # minimize chi2
+        if logger:
+            logger.info('Starting analytic guess. Initial chi2 = {0:.2e}'.format(chi2(p0)))
+        res = minimize(chi2, p0)
+        if logger:
+            logger.warn('Analytic finished. Final chi2 = {0:.2e}'.format(chi2(res.x)))
+
+        if logger:
+            logger.info('Analytic guess parameters:')
+        # update fitter_kwargs
+        key_i = 0
+        for key in self.keys:
+            if key == 'g1' or key == 'g2':
+                continue
+            if not self.fitter_kwargs['fix_' + key]:
+                val = res.x[key_i]
+                key_i += 1
+                self.fitter_kwargs[key] = val
+                if logger:
+                    logger.info('{0}:\t{1:.2e}'.format(key, val))
+
+        # update fit parameters based on fitter_kwargs
+        self._update_psf_params(logger=logger, **self.fitter_kwargs)
+
+    def _minuit_fit(self, logger=None):
         """Fit interpolated PSF model to star data using iminuit implementation of Minuit
 
-        :parma stars:           Stars used in fit
         :param logger:          A logger object for logging debug info. [default: None]
         """
-        if logger:
-            logger.info("Start fitting Optical fit using minuit and %s stars", len(stars))
         from iminuit import Minuit
 
         self._n_iter = 0
@@ -588,30 +822,33 @@ class OpticalWavefrontPSF(PSF):
             logger.debug("Creating minuit object")
         self._minuit = Minuit(self._fit_func, grad_fcn=self._grad_func_minuit, forced_parameters=self.keys, **self.fitter_kwargs)
         # run the fit and solve! This will update the interior parameters
-        if logger:
-            logger.info("Running migrad for {0} steps!".format(self.kwargs['max_iterations']))
-        self._minuit.migrad(ncall=self.kwargs['max_iterations'])
-        # self._hesse = self._minuit.hesse()
-        # self._minos = self._minuit.minos()
-        # these are the best fit parameters
-        self._fitarg = self._minuit.fitarg
+        if self.kwargs['max_iterations'] > 0:
+            if logger:
+                logger.info("Running migrad for {0} steps!".format(self.kwargs['max_iterations']))
+            self._minuit.migrad(ncall=self.kwargs['max_iterations'])
+            # self._hesse = self._minuit.hesse()
+            # self._minos = self._minuit.minos()
+            # these are the best fit parameters
 
-        # update params to best values
-        if logger:
-            logger.debug("Minuit Fitargs:\n*****\n")
-            for key in self._fitarg:
-                logger.debug("{0}: {1}\n".format(key, self._fitarg[key]))
-            logger.debug("Minuit Values:\n*****\n")
-            for key in self._minuit.values:
-                logger.debug("{0}: {1}\n".format(key, self._minuit.values[key]))
-        self._update_psf_params(**self._minuit.values)
+            # update params to best values
+            if logger:
+                logger.debug("Minuit Fitargs:\n*****\n")
+                for key in self._minuit.fitarg:
+                    logger.debug("{0}: {1}\n".format(key, self._minuit.fitarg[key]))
+                logger.debug("Minuit Values:\n*****\n")
+                for key in self._minuit.values:
+                    logger.debug("{0}: {1}\n".format(key, self._minuit.values[key]))
+            self._update_psf_params(logger=logger, **self._minuit.values)
 
-        # save params and errors to the kwargs
-        self.fitter_kwargs.update(self._fitarg)
-        if logger:
-            logger.debug("Minuit kwargs are now:\n*****\n")
-            for key in self.fitter_kwargs:
-                logger.debug("{0}: {1}\n".format(key, self.fitter_kwargs[key]))
+            # save params and errors to the kwargs
+            self.fitter_kwargs.update(self._minuit.fitarg)
+            if logger:
+                logger.debug("Minuit kwargs are now:\n*****\n")
+                for key in self.fitter_kwargs:
+                    logger.debug("{0}: {1}\n".format(key, self.fitter_kwargs[key]))
+        else:
+            if logger:
+                logger.info('User specified {0} steps, so moving on without running migrad'.format(self.kwargs['max_iterations']))
 
     def _lmfit_fit(self, stars, logger=None):
         """Fit interpolated PSF model to star data using lmfit implementation of Levenberg-Marquardt minimization
@@ -795,7 +1032,7 @@ class OpticalWavefrontPSF(PSF):
                     params[key] = params[key] + term * step_size
 
                     # update psf
-                    self._update_psf_params(**params)
+                    self._update_psf_params(logger=logger, **params)
                     chi2_sum, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
 
                     stencil_chi2_l.append(chi2_l)
@@ -1051,7 +1288,7 @@ class OpticalWavefrontPSF(PSF):
                 self.fitter_kwargs[combined_key] = data[combined_key][0]
 
         # do the awkward misalignment stuff
-        self._update_psf_params(**self.fitter_kwargs)
+        self._update_psf_params(logger=logger, **self.fitter_kwargs)
 
         self._time = time()
 
