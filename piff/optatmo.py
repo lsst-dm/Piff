@@ -473,6 +473,33 @@ class OpticalWavefrontPSF(PSF):
     @staticmethod
     def _measure_shapes(stars, logger=None):
         """Measure shapes using piff.util.hsm
+
+        However, we have a special desired basis: we want the linear combinations of flux normalized, centered 2nd order moments.
+
+        This emans we must do two things:
+
+        1) convert sigma to Mxx + Myy
+        2) convert g1, g2 to Mxx - Myy, 2 * Mxy
+
+        Well. First we must realize that g != e!
+
+        g from e:
+            absesq = e1**2 + e2**2
+            _e2g = 1. / (1. + sqrt(1.-absesq))
+            g = (e1 + 1j * e2) * e2g
+        e from g:
+            absgsq = g1**2 + g2**2
+            g2e = 2. / (1.+absgsq)
+            e = (g1 + 1j * g2) * g2e
+
+        OK so the above e are _normalized_ e!
+
+        Next: sigma = (mxx myy - mxy mxy) ** 0.25
+        but e0 = mxx + myy; e1 = mxx - myy; e2 = 2 mxy
+        so sigma^4 = (e0^2 - e1^2 - e2^2) / 4
+                   = e0^2 (1 - e1norm^2 - e2norm^2) / 4
+        This gets you e0, which then gets you unnormalized e1 and e2
+
         """
         shapes = []
         for star_i, star in enumerate(stars):
@@ -485,8 +512,21 @@ class OpticalWavefrontPSF(PSF):
                     logger.debug("Star failed moment parameter; setting shapes to nan!")
                 shapes.append([np.nan, np.nan, np.nan])
             else:
-                # we want sigma^2, not sigma for size, and normalized ellipticity
-                shapes.append([sigma ** 2, sigma ** 2 * g1, sigma ** 2 * g2])
+                # convert g to normalized e
+                absgsq = g1 ** 2 + g2 ** 2
+                e1norm = g1 * 2. / (1. + absgsq)
+                e2norm = g2 * 2. / (1. + absgsq)
+                # convert sigma to e0
+                e0 = np.sqrt(4 * sigma ** 4 / (1. - e1norm ** 2 - e2norm ** 2))
+                # un normalize normalized e
+                e1 = e0 * e1norm
+                e2 = e0 * e2norm
+
+                # # old, and incorrect way!
+                # e0 = sigma ** 2
+                # e1 = e0 * g1
+                # e2 = e0 * g2
+                shapes.append([e0, e1, e2])
         shapes = np.array(shapes)
 
         return shapes
@@ -549,9 +589,11 @@ class OpticalWavefrontPSF(PSF):
             star.data.properties['used_in_optical_wavefront'] = use_star
 
         if self.kwargs['guess_start']:
-            r0_guess = (np.mean(self._shapes[:, 0]) / 0.004) ** -0.5
+            # e0 = 0.12 + r0 ** -2 * 0.0082
+            e0_mean = np.mean(self._shapes[:, 0])
+            r0_guess = ((e0_mean - 0.12) / 0.0082) ** -0.5
             if logger:
-                logger.info('Adjusting r0 to best fit guess of {0} from average size of {1}'.format(r0_guess, np.mean(self._shapes[:, 0])))
+                logger.info('Adjusting r0 to best fit guess of {0} from average size of {1}'.format(r0_guess, e0_mean))
             self.fitter_kwargs['r0'] = r0_guess
             if logger:
                 logger.info('Starting analytic guesswork for fit.')
@@ -660,75 +702,119 @@ class OpticalWavefrontPSF(PSF):
 
         """
         e0 14 coeffs,
-        std lasso 6.71e-03 std full 5.91e-03
+        std lasso 1.35e-02 std full 1.18e-02
         [None, None]:    +0.00e+00
-        0 ['r0']:    +4.23e-01
-        1 ['r0', 'r0']:    -3.71e-03
-        2 ['r0', 'r0', 'r0']:    -3.78e-04
-        19 ['r0', 'z04', 'z11']:    +1.24e-02
-        54 ['r0', 'z11', 'z11']:    +1.17e-02
-        56 ['z04', 'z04']:    +1.57e-02
-        63 ['z04', 'z11']:    +1.05e-02
-        65 ['z05', 'z05']:    +9.37e-03
-        73 ['z06', 'z06']:    +9.41e-03
-        80 ['z07', 'z07']:    +2.08e-02
-        86 ['z08', 'z08']:    +2.06e-02
-        91 ['z09', 'z09']:    +1.67e-02
-        95 ['z10', 'z10']:    +1.69e-02
-        98 ['z11', 'z11']:    +4.13e-02
+        0 ['r0']:    +8.44e-01
+        1 ['r0', 'r0']:    -6.57e-03
+        2 ['r0', 'r0', 'r0']:    -9.20e-04
+        19 ['r0', 'z04', 'z11']:    +2.37e-02
+        54 ['r0', 'z11', 'z11']:    +2.39e-02
+        56 ['z04', 'z04']:    +3.24e-02
+        63 ['z04', 'z11']:    +2.06e-02
+        65 ['z05', 'z05']:    +1.85e-02
+        73 ['z06', 'z06']:    +1.88e-02
+        80 ['z07', 'z07']:    +4.32e-02
+        86 ['z08', 'z08']:    +4.32e-02
+        91 ['z09', 'z09']:    +3.61e-02
+        95 ['z10', 'z10']:    +3.68e-02
+        98 ['z11', 'z11']:    +8.04e-02
         """
-        e0 = psq[0] * 4.23e-1 + psq[1] * -3.71e-3 + psq[2] * -3.78e-4 + psq[19] * 1.24e-2 + psq[54] * 1.17e-2 + \
-             psq[56] * 1.57e-2 + psq[63] * 1.05e-2 + psq[65] * 9.37e-3 + psq[73] * 9.41e-3 + \
-             psq[80] * 2.08e-2 + psq[86] * 2.06e-2 + psq[91] * 1.67e-2 + psq[95] * 1.69e-2 + psq[98] * 4.13e-2
+
+        e0 = 8.44e-01 * psq[0] + -6.57e-03 * psq[1] + -9.20e-04 * psq[2] + 2.37e-02 * psq[19] +  \
+             2.39e-02 * psq[54] + 3.24e-02 * psq[56] + 2.06e-02 * psq[63] +  \
+             1.85e-02 * psq[65] + 1.88e-02 * psq[73] +  \
+             4.32e-02 * psq[80] + 4.32e-02 * psq[86] + 3.61e-02 * psq[91] +  \
+             3.68e-02 * psq[95] + 8.04e-02 * psq[98]
 
         """
-        e1 14 coeffs,
-        std lasso 2.14e-03 std full 2.12e-03
+        e1 19 coeffs,
+        std lasso 8.36e-03 std full 8.25e-03
         [None, None]:    +0.00e+00
-        4 ['r0', 'r0', 'z05']:    +1.02e-06
-        6 ['r0', 'r0', 'z07']:    +8.45e-07
-        14 ['r0', 'z04', 'z06']:    +6.00e-04
-        34 ['r0', 'z06', 'z11']:    +3.31e-03
-        36 ['r0', 'z07', 'z07']:    -8.06e-04
-        38 ['r0', 'z07', 'z09']:    +1.22e-03
-        42 ['r0', 'z08', 'z08']:    +7.99e-04
-        44 ['r0', 'z08', 'z10']:    +1.14e-03
-        58 ['z04', 'z06']:    +9.91e-03
-        78 ['z06', 'z11']:    +6.72e-03
-        80 ['z07', 'z07']:    -1.72e-03
-        82 ['z07', 'z09']:    +1.30e-02
-        86 ['z08', 'z08']:    +1.74e-03
-        88 ['z08', 'z10']:    +1.33e-02
+        2 ['r0', 'r0', 'r0']:    +7.24e-06
+        4 ['r0', 'r0', 'z05']:    +8.39e-06
+        5 ['r0', 'r0', 'z06']:    -6.76e-06
+        14 ['r0', 'z04', 'z06']:    +2.56e-03
+        34 ['r0', 'z06', 'z11']:    +1.36e-02
+        36 ['r0', 'z07', 'z07']:    -3.16e-03
+        38 ['r0', 'z07', 'z09']:    +5.09e-03
+        42 ['r0', 'z08', 'z08']:    +2.72e-03
+        44 ['r0', 'z08', 'z10']:    +4.58e-03
+        55 ['z04']:    -3.08e-05
+        58 ['z04', 'z06']:    +3.98e-02
+        72 ['z06']:    +2.20e-05
+        78 ['z06', 'z11']:    +2.70e-02
+        80 ['z07', 'z07']:    -7.62e-03
+        82 ['z07', 'z09']:    +5.40e-02
+        85 ['z08']:    -1.04e-05
+        86 ['z08', 'z08']:    +8.60e-03
+        88 ['z08', 'z10']:    +5.46e-02
+        91 ['z09', 'z09']:    -5.76e-05
         """
-        e1 = psq[4] * 1.02e-6 + psq[6] * 8.45e-7 + psq[14] * 6.0e-04 + psq[34] * 3.31e-3 + psq[36] * -8.06e-4 + \
-             psq[38] * 1.22e-3 + psq[42] * 7.99e-4 + psq[44] * 1.14e-3 + psq[58] * 9.91e-3 + psq[78] * 6.72e-3 + \
-             psq[80] * -1.72e-3 + psq[82] * 1.3e-2 + psq[86] * 1.74e-3 + psq[88] * 1.33e-2
+
+        e1 = 7.24e-06 * psq[2] + 8.39e-06 * psq[4] + -6.76e-06 * psq[5] + 2.56e-03 * psq[14] +  \
+             1.36e-02 * psq[34] + -3.16e-03 * psq[36] + 5.09e-03 * psq[38] +  \
+             2.72e-03 * psq[42] + 4.58e-03 * psq[44] +  \
+             -3.08e-05 * psq[55] + 3.98e-02 * psq[58] + 2.20e-05 * psq[72] +  \
+             2.70e-02 * psq[78] + -7.62e-03 * psq[80] + 5.40e-02 * psq[82] +  \
+             -1.04e-05 * psq[85] + 8.60e-03 * psq[86] + 5.46e-02 * psq[88] +  \
+             -5.76e-05 * psq[91]
 
         """
-        e2 13 coeffs,
-        std lasso 2.25e-03 std full 2.23e-03
+        e2 17 coeffs,
+        std lasso 9.10e-03 std full 9.02e-03
         [None, None]:    +0.00e+00
-        2 ['r0', 'r0', 'r0']:    +3.30e-07
-        6 ['r0', 'r0', 'z07']:    +1.23e-05
-        9 ['r0', 'r0', 'z10']:    +3.79e-06
-        13 ['r0', 'z04', 'z05']:    +7.40e-04
-        27 ['r0', 'z05', 'z11']:    +3.09e-03
-        37 ['r0', 'z07', 'z08']:    +1.60e-03
-        39 ['r0', 'z07', 'z10']:    -1.17e-03
-        43 ['r0', 'z08', 'z09']:    +1.21e-03
-        57 ['z04', 'z05']:    +9.85e-03
-        71 ['z05', 'z11']:    +6.97e-03
-        81 ['z07', 'z08']:    +3.69e-03
-        83 ['z07', 'z10']:    -1.34e-02
-        87 ['z08', 'z09']:    +1.34e-02
+        2 ['r0', 'r0', 'r0']:    +4.55e-06
+        4 ['r0', 'r0', 'z05']:    +7.57e-06
+        5 ['r0', 'r0', 'z06']:    +1.77e-05
+        8 ['r0', 'r0', 'z09']:    -6.87e-05
+        13 ['r0', 'z04', 'z05']:    +2.75e-03
+        27 ['r0', 'z05', 'z11']:    +1.28e-02
+        37 ['r0', 'z07', 'z08']:    +6.48e-03
+        39 ['r0', 'z07', 'z10']:    -4.96e-03
+        43 ['r0', 'z08', 'z09']:    +4.04e-03
+        57 ['z04', 'z05']:    +4.10e-02
+        65 ['z05', 'z05']:    +7.61e-05
+        71 ['z05', 'z11']:    +2.77e-02
+        81 ['z07', 'z08']:    +1.53e-02
+        83 ['z07', 'z10']:    -5.36e-02
+        87 ['z08', 'z09']:    +5.54e-02
+        92 ['z09', 'z10']:    +7.39e-05
+        97 ['z11']:    +4.23e-05
         """
-        e2 = psq[2] * 3.3e-7 + psq[6] * 1.23e-5 + psq[9] * 3.79e-6 + psq[13] * 7.4e-4 + psq[27] * 3.09e-3 + \
-             psq[37] * 1.6e-3 + psq[39] * -1.17e-3 + psq[43] * 1.21e-3 + psq[57] * 9.85e-3 + psq[71] * 6.97e-3 + \
-             psq[81] * 3.69e-3 + psq[83] * -1.34e-2 + psq[87] * 1.34e-2
+
+        e2 = 4.55e-06 * psq[2] + 7.57e-06 * psq[4] + 1.77e-05 * psq[5] + -6.87e-05 * psq[8] +  \
+             2.75e-03 * psq[13] + 1.28e-02 * psq[27] + 6.48e-03 * psq[37] +  \
+             -4.96e-03 * psq[39] + 4.04e-03 * psq[43] + 4.10e-02 * psq[57] +  \
+             7.61e-05 * psq[65] + 2.77e-02 * psq[71] +  \
+             1.53e-02 * psq[81] + -5.36e-02 * psq[83] + 5.54e-02 * psq[87] +  \
+             7.39e-05 * psq[92] + 4.23e-05 * psq[97]
 
         shapes = np.vstack((e0, e1, e2)).T
 
         return shapes
+
+    def _analytic_stars_to_shapes(self, stars, logger=None):
+
+        # get zernikes and coordinates
+        zernikes, u, v, fx, fy = self._stars_to_parameters(stars, logger=logger)
+
+        # get misalignment from fitter_kwargs
+        vals = []
+        for key in self.keys:
+            if key == 'g1' or key == 'g2':
+                continue
+            vals.append(self.fitter_kwargs[key])
+
+        # apply misalignments
+        params = self._analytic_misalign_zernikes(zernikes, fx, fy, *vals)
+
+        # psq
+        psq, pindx = self._analytic_parameterization(params)
+
+        # shapes
+        model_shapes = self._analytic_params_to_shapes(psq)
+
+        return model_shapes
 
     def _analytic_fit(self, logger=None):
         """Fit interpolated PSF model to star data by analytic relation. Should get us pretty close.
