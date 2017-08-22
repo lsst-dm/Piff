@@ -250,22 +250,51 @@ def hsm_error(star, logger=None, return_debug=False):
 
     # normalization for the various sums over pixels
     normalization = np.sum(data_v * wuse_v * kernel_v)
-    flux_calc = normalization
+    flux_calc = 2 * normalization
     normalization2 = normalization * normalization
 
     # use flux and calculate its error from star_model - noise-free Gaussian matched to the data
     flux = star_model.flux
 
-    star_model_wgt = star_model.weight.array
-    star_model_sdata2 = np.where(star_model_wgt == 0, 0, 1. / star_model_wgt)
-    sigma_flux = np.sqrt(np.sum(star_model_sdata2))
+    # star_model_wgt = star_model.weight.array
+    # star_model_sdata2 = np.where(star_model_wgt == 0, 0, 1. / star_model_wgt)
+    # sigma_flux = np.sqrt(np.sum(star_model_sdata2))
+    sdata_v = np.where(weight_v > 0, np.sqrt(1.0 / weight_v), 0)
+    sigma2_normalization = np.sum(np.power(wuse_v * sdata_v * kernel_v, 2))
+    sigma_normalization = np.sqrt(sigma2_normalization)
+    # flux is 2x normalization in hsm.cpp
+    sigma_flux = 2 * sigma_normalization
+
+    # flux fudge factors?
+    flux_fudge_factor = 1
+    flux_calc = flux_calc * flux_fudge_factor
+    sigma_flux = sigma_flux * np.sqrt(flux_fudge_factor)
+    sigma_normalization = 1. * sigma_normalization
 
     # calculate number of effective pixels
-    npixeff_calc = np.power(np.sum(wuse_v * kernel_v), 2) / np.sum(np.power(wuse_v * kernel_v, 2))
+    # npixeff_calc = np.power(np.sum(wuse_v * kernel_v), 2) / np.sum(np.power(wuse_v * kernel_v, 2))
 
-    # for completeness calculate my own u0,v0
+    #####
+    # u0, v0
+    #####
+
     u0_calc = np.sum(data_v * wuse_v * kernel_v * u_v) / normalization
     v0_calc = np.sum(data_v * wuse_v * kernel_v * v_v) / normalization
+
+    sigma2_u0_data = np.sum(np.power(sdata_v * wuse_v * kernel_v * u_v, 2)) / normalization2
+    sigma2_v0_data = np.sum(np.power(sdata_v * wuse_v * kernel_v * v_v, 2)) / normalization2
+
+    # add sigma_normalization
+    sigma2_u0_flux = np.power(u0_calc * sigma_normalization / normalization, 2)
+    sigma2_v0_flux = np.power(v0_calc * sigma_normalization / normalization, 2)
+
+    sigma_u0 = np.sqrt(sigma2_u0_data)# + sigma2_u0_flux)
+    sigma_v0 = np.sqrt(sigma2_v0_data)# + sigma2_v0_flux)
+
+    # u0, v0 fudge factors
+    sigma_u0 = sigma_u0 * 2.0
+    sigma_v0 = sigma_v0 * 2.0
+
 
     # calculate moments
     # TODO: should I use u0_calc etc here?
@@ -293,37 +322,32 @@ def hsm_error(star, logger=None, return_debug=False):
     e2_calc = 2 * Muv
 
     # now calculate errors: ie. shot and read noise per pixel
-    sdata_v = np.sqrt(1.0 / weight_v)
 
-    sigma2_u0 = np.sum(np.power(sdata_v * wuse_v * kernel_v * u_v, 2)) / normalization2
-    sigma2_v0 = np.sum(np.power(sdata_v * wuse_v * kernel_v * v_v, 2)) / normalization2
-    sigma_u0 = np.sqrt(sigma2_u0)
-    sigma_v0 = np.sqrt(sigma2_v0)
 
     # TODO: what is the scale of these different errors?
 
-    # three terms: those proportional to: sdata_v, sigma_u0 and sigma_v0, and sigma_flux
-    sigma2_e0_data = np.sum(np.power(sdata_v * wuse_v * kernel_v * (du_v * du_v + dv_v * dv_v), 2)) / normalization2
-    sigma2_e1_data = np.sum(np.power(sdata_v * wuse_v * kernel_v * (du_v * du_v - dv_v * dv_v), 2)) / normalization2
-    sigma2_e2_data = np.sum(np.power(sdata_v * wuse_v * kernel_v * 2 * (du_v * dv_v), 2)) / normalization2
+    # three terms: those proportional to: sdata_v, sigma_u0 and sigma_v0, and sigma_normalization
+    sigma2_e0_data = np.sum(np.power(2 * sdata_v * wuse_v * kernel_v * (du_v * du_v + dv_v * dv_v), 2)) / normalization2
+    sigma2_e1_data = np.sum(np.power(2 * sdata_v * wuse_v * kernel_v * (du_v * du_v - dv_v * dv_v), 2)) / normalization2
+    sigma2_e2_data = np.sum(np.power(2 * sdata_v * wuse_v * kernel_v * 2 * (du_v * dv_v), 2)) / normalization2
 
     # add sigma_u0, sigma_v0
-    sigma2_e0_u0 = np.sum(np.power(2. * du_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
-    sigma2_e0_v0 = np.sum(np.power(2. * dv_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
-    sigma2_e1_u0 = np.sum(np.power(2. * du_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
-    sigma2_e1_v0 = np.sum(np.power(2. * dv_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
-    sigma2_e2_u0 = np.sum(np.power(2. * dv_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
-    sigma2_e2_v0 = np.sum(np.power(2. * du_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
+    sigma2_e0_u0 = np.sum(np.power(2 * 2. * du_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
+    sigma2_e0_v0 = np.sum(np.power(2 * 2. * dv_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
+    sigma2_e1_u0 = np.sum(np.power(2 * 2. * du_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
+    sigma2_e1_v0 = np.sum(np.power(2 * 2. * dv_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
+    sigma2_e2_u0 = np.sum(np.power(2 * 2. * dv_v * data_v * wuse_v * kernel_v * sigma_u0, 2)) / normalization2
+    sigma2_e2_v0 = np.sum(np.power(2 * 2. * du_v * data_v * wuse_v * kernel_v * sigma_v0, 2)) / normalization2
 
-    # add sigma_flux
-    sigma2_e0_flux = np.power(e0_calc * sigma_flux / normalization, 2)
-    sigma2_e1_flux = np.power(e1_calc * sigma_flux / normalization, 2)
-    sigma2_e2_flux = np.power(e2_calc * sigma_flux / normalization, 2)
+    # add sigma_normalization
+    sigma2_e0_flux = np.power(e0_calc * sigma_normalization / normalization, 2)
+    sigma2_e1_flux = np.power(e1_calc * sigma_normalization / normalization, 2)
+    sigma2_e2_flux = np.power(e2_calc * sigma_normalization / normalization, 2)
 
     # TODO: sigma flux is not well behaved, so we have removed it until we figure that out
-    sigma_e0 = np.sqrt(sigma2_e0_data + sigma2_e0_u0 + sigma2_e0_v0 + sigma2_e0_flux)
-    sigma_e1 = np.sqrt(sigma2_e1_data + sigma2_e1_u0 + sigma2_e1_v0 + sigma2_e1_flux)
-    sigma_e2 = np.sqrt(sigma2_e2_data + sigma2_e2_u0 + sigma2_e2_v0 + sigma2_e2_flux)
+    sigma_e0 = np.sqrt(sigma2_e0_data + sigma2_e0_u0 + sigma2_e0_v0)# + sigma2_e0_flux)
+    sigma_e1 = np.sqrt(sigma2_e1_data + sigma2_e1_u0 + sigma2_e1_v0)# + sigma2_e1_flux)
+    sigma_e2 = np.sqrt(sigma2_e2_data + sigma2_e2_u0 + sigma2_e2_v0)# + sigma2_e2_flux)
 
     #####
     # FUDGE VALUES
@@ -332,12 +356,9 @@ def hsm_error(star, logger=None, return_debug=False):
     # TODO: I do not understand the flux errors still. :(
     #####
 
-    # TODO: should sigma_u0 and _v0 fudge factors be applied BEFORE they go into e0 etc?
-    sigma_u0 = sigma_u0 * 2.0
-    sigma_v0 = sigma_v0 * 2.0
-    sigma_e0 = sigma_e0 * 3.0
-    sigma_e1 = sigma_e1 * 4.0
-    sigma_e2 = sigma_e2 * 4.0
+    sigma_e0 = sigma_e0 * 1.5
+    sigma_e1 = sigma_e1 * 2.0
+    sigma_e2 = sigma_e2 * 2.0
 
     if logger:
         logger.debug('Star hsm_error. Value of flux, u0, v0, e0, e1, e2 are:')
@@ -346,6 +367,16 @@ def hsm_error(star, logger=None, return_debug=False):
         logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux, u0, v0, e0, e1, e2))
         logger.debug('Star hsm_error. Value of errors for flux, u0, v0, e0, e1, e2 are:')
         logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2))
+        logger.debug('Star hsm_error. Relative un-fudged contributions for u0 from data and flux are (in sigma2):')
+        logger.debug('{0:.2e} {1:.2e}'.format(sigma2_u0_data, sigma2_u0_flux))
+        logger.debug('Star hsm_error. Relative un-fudged contributions for v0 from data and flux are (in sigma2):')
+        logger.debug('{0:.2e} {1:.2e}'.format(sigma2_v0_data, sigma2_v0_flux))
+        logger.debug('Star hsm_error. Relative un-fudged contributions for e0 from data, flux, u0, and v0 are (in sigma2):')
+        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e0_data, sigma2_e0_flux, sigma2_e0_u0, sigma2_e0_v0))
+        logger.debug('Star hsm_error. Relative un-fudged contributions for e1 from data, flux, u0, and v0 are (in sigma2):')
+        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e1_data, sigma2_e1_flux, sigma2_e1_u0, sigma2_e1_v0))
+        logger.debug('Star hsm_error. Relative un-fudged contributions for e2 from data, flux, u0, and v0 are (in sigma2):')
+        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e2_data, sigma2_e2_flux, sigma2_e2_u0, sigma2_e2_v0))
 
     if return_debug:
         return sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2, \
