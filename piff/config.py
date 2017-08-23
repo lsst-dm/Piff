@@ -34,11 +34,14 @@ def setup_logger(verbose=1, log_file=None):
     :returns: a logging.Logger instance
     """
     import logging
+    # add a level for extra debug -- debug things for when you want absolutely EVERYTHING
+    logging.addLevelName(5, 'extra')
     # Parse the integer verbosity level from the command line args into a logging_level string
     logging_levels = { 0: logging.CRITICAL,
                        1: logging.WARNING,
                        2: logging.INFO,
-                       3: logging.DEBUG }
+                       3: logging.DEBUG,
+                       4: 5, }
     logging_level = logging_levels[verbose]
 
     # Setup logging to go to sys.stdout or (if requested) to an output file

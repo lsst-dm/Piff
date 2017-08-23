@@ -150,7 +150,7 @@ class Optical(Model):
             # if pupil_plane_im is not None:
             if isinstance(pupil_plane_im, str):
                 if logger:
-                    logger.debug('Loading pupil_plane_im from {0}'.format(pupil_plane_im))
+                    logger.info('Loading pupil_plane_im from {0}'.format(pupil_plane_im))
                 pupil_plane_im = galsim.fits.read(pupil_plane_im)
             self.optical_psf_kwargs['pupil_plane_im'] = pupil_plane_im
             # also need to cut several kwargs from optical_psf_kwargs if we have pupil_plane_im

@@ -69,20 +69,20 @@ class GSObjectModel(Model):
         ref_flux, ref_cenu, ref_cenv, ref_size, ref_g1, ref_g2, flag = hsm(self.draw(star, profile=profile))
         ref_shape = galsim.Shear(g1=ref_g1, g2=ref_g2)
         if logger:
-            logger.debug("    hsm_flux = {0}".format(flux))
-            logger.debug("    hsm_cenu = {0}".format(cenu))
-            logger.debug("    hsm_cenv = {0}".format(cenv))
-            logger.debug("    hsm_size = {0}".format(size))
-            logger.debug("    hsm_g1 = {0}".format(g1))
-            logger.debug("    hsm_g2 = {0}".format(g2))
-            logger.debug("    fit params = {0}".format(star.fit.params))
-            logger.debug("    ref_flux = {0}".format(ref_flux))
-            logger.debug("    ref_cenu = {0}".format(ref_cenu))
-            logger.debug("    ref_cenv = {0}".format(ref_cenv))
-            logger.debug("    ref_size = {0}".format(ref_size))
-            logger.debug("    ref_g1 = {0}".format(ref_g1))
-            logger.debug("    ref_g2 = {0}".format(ref_g2))
-            logger.debug("    flag = {0}".format(flag))
+            logger.log(5, "    hsm_flux = {0}".format(flux))
+            logger.log(5, "    hsm_cenu = {0}".format(cenu))
+            logger.log(5, "    hsm_cenv = {0}".format(cenv))
+            logger.log(5, "    hsm_size = {0}".format(size))
+            logger.log(5, "    hsm_g1 = {0}".format(g1))
+            logger.log(5, "    hsm_g2 = {0}".format(g2))
+            logger.log(5, "    fit params = {0}".format(star.fit.params))
+            logger.log(5, "    ref_flux = {0}".format(ref_flux))
+            logger.log(5, "    ref_cenu = {0}".format(ref_cenu))
+            logger.log(5, "    ref_cenv = {0}".format(ref_cenv))
+            logger.log(5, "    ref_size = {0}".format(ref_size))
+            logger.log(5, "    ref_g1 = {0}".format(ref_g1))
+            logger.log(5, "    ref_g2 = {0}".format(ref_g2))
+            logger.log(5, "    flag = {0}".format(flag))
         if flag:
             if logger:
                 logger.warning('Error with star moment_fit. Values are:')
@@ -106,12 +106,12 @@ class GSObjectModel(Model):
         param_g2 = param_shear.g2
 
         if logger:
-            logger.debug("    flux = {0}".format(param_flux))
-            logger.debug("    du = {0}".format(param_du))
-            logger.debug("    dv = {0}".format(param_dv))
-            logger.debug("    scale = {0}".format(param_scale))
-            logger.debug("    g1 = {0}".format(param_g1))
-            logger.debug("    g2 = {0}".format(param_g2))
+            logger.log(5, "    flux = {0}".format(param_flux))
+            logger.log(5, "    du = {0}".format(param_du))
+            logger.log(5, "    dv = {0}".format(param_dv))
+            logger.log(5, "    scale = {0}".format(param_scale))
+            logger.log(5, "    g1 = {0}".format(param_g1))
+            logger.log(5, "    g2 = {0}".format(param_g2))
 
         return param_flux, param_du, param_dv, param_scale, param_g1, param_g2
 
@@ -225,12 +225,12 @@ class GSObjectModel(Model):
         import time
         logger = galsim.config.LoggerWrapper(logger)
         t0 = time.time()
-        logger.debug("Start lmfit minimize.")
+        logger.log(5, "Start lmfit minimize.")
 
         results = lmfit.minimize(self._lmfit_resid, params, args=(star,profile,))
         flux, du, dv, scale, g1, g2 = results.params.valuesdict().values()
 
-        logger.debug("End lmfit minimize.  Elapsed time: {0}".format(time.time() - t0))
+        logger.log(5, "End lmfit minimize.  Elapsed time: {0}".format(time.time() - t0))
         return results
 
     def lmfit(self, star, profile=None, logger=None):
@@ -359,15 +359,15 @@ class GSObjectModel(Model):
         :returns:           New Star instance, with updated flux, center, chisq, dof, worst
         """
         logger = galsim.config.LoggerWrapper(logger)
-        logger.debug("Reflux for star:")
-        logger.debug("    flux = %s",star.fit.flux)
-        logger.debug("    center = %s",star.fit.center)
-        logger.debug("    props = %s",star.data.properties)
-        logger.debug("    image = %s",star.data.image)
-        #logger.debug("    image = %s",star.data.image.array)
-        #logger.debug("    weight = %s",star.data.weight.array)
-        logger.debug("    image center = %s",star.data.image(star.data.image.center()))
-        logger.debug("    weight center = %s",star.data.weight(star.data.weight.center()))
+        logger.log(5, "Reflux for star:")
+        logger.log(5, "    flux = %s",star.fit.flux)
+        logger.log(5, "    center = %s",star.fit.center)
+        logger.log(5, "    props = %s",star.data.properties)
+        logger.log(5, "    image = %s",star.data.image)
+        #logger.log(5, "    image = %s",star.data.image.array)
+        #logger.log(5, "    weight = %s",star.data.weight.array)
+        logger.log(5, "    image center = %s",star.data.image(star.data.image.center()))
+        logger.log(5, "    weight center = %s",star.data.weight(star.data.weight.center()))
         do_center = fit_center and self._force_model_center
         if do_center:
             params = self._lmfit_params(star, vary_params=False)

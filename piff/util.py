@@ -194,8 +194,8 @@ def hsm(star, logger=None):
     flag = mom.moments_status
 
     if logger:
-        logger.debug('Star hsm. Values of flux, u0, v0, size, g1, g2, flag are are:')
-        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e} {6:.2e}'.format(flux, center.x, center.y, sigma, shape.g1, shape.g2, flag))
+        logger.log(5, 'Star hsm. Values of flux, u0, v0, size, g1, g2, flag are are:')
+        logger.log(5, '{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e} {6:.2e}'.format(flux, center.x, center.y, sigma, shape.g1, shape.g2, flag))
 
     return flux, center.x, center.y, sigma, shape.g1, shape.g2, flag
 
@@ -361,22 +361,22 @@ def hsm_error(star, logger=None, return_debug=False):
     sigma_e2 = sigma_e2 * 2.0
 
     if logger:
-        logger.debug('Star hsm_error. Value of flux, u0, v0, e0, e1, e2 are:')
-        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux_calc, u0_calc, v0_calc, e0_calc, e1_calc, e2_calc))
-        logger.debug('Star hsm_error. Value of Gaussian model flux, u0, v0, e0, e1, e2 are:')
-        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux, u0, v0, e0, e1, e2))
-        logger.debug('Star hsm_error. Value of errors for flux, u0, v0, e0, e1, e2 are:')
-        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2))
-        logger.debug('Star hsm_error. Relative un-fudged contributions for u0 from data and flux are (in sigma2):')
-        logger.debug('{0:.2e} {1:.2e}'.format(sigma2_u0_data, sigma2_u0_flux))
-        logger.debug('Star hsm_error. Relative un-fudged contributions for v0 from data and flux are (in sigma2):')
-        logger.debug('{0:.2e} {1:.2e}'.format(sigma2_v0_data, sigma2_v0_flux))
-        logger.debug('Star hsm_error. Relative un-fudged contributions for e0 from data, flux, u0, and v0 are (in sigma2):')
-        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e0_data, sigma2_e0_flux, sigma2_e0_u0, sigma2_e0_v0))
-        logger.debug('Star hsm_error. Relative un-fudged contributions for e1 from data, flux, u0, and v0 are (in sigma2):')
-        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e1_data, sigma2_e1_flux, sigma2_e1_u0, sigma2_e1_v0))
-        logger.debug('Star hsm_error. Relative un-fudged contributions for e2 from data, flux, u0, and v0 are (in sigma2):')
-        logger.debug('{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e2_data, sigma2_e2_flux, sigma2_e2_u0, sigma2_e2_v0))
+        logger.log(5, 'Star hsm_error. Value of flux, u0, v0, e0, e1, e2 are:')
+        logger.log(5, '{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux_calc, u0_calc, v0_calc, e0_calc, e1_calc, e2_calc))
+        logger.log(5, 'Star hsm_error. Value of Gaussian model flux, u0, v0, e0, e1, e2 are:')
+        logger.log(5, '{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(flux, u0, v0, e0, e1, e2))
+        logger.log(5, 'Star hsm_error. Value of errors for flux, u0, v0, e0, e1, e2 are:')
+        logger.log(5, '{0:.2e} {1:.2e} {2:.2e} {3:.2e} {4:.2e} {5:.2e}'.format(sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2))
+        logger.log(5, 'Star hsm_error. Relative un-fudged contributions for u0 from data and flux are (in sigma2):')
+        logger.log(5, '{0:.2e} {1:.2e}'.format(sigma2_u0_data, sigma2_u0_flux))
+        logger.log(5, 'Star hsm_error. Relative un-fudged contributions for v0 from data and flux are (in sigma2):')
+        logger.log(5, '{0:.2e} {1:.2e}'.format(sigma2_v0_data, sigma2_v0_flux))
+        logger.log(5, 'Star hsm_error. Relative un-fudged contributions for e0 from data, flux, u0, and v0 are (in sigma2):')
+        logger.log(5, '{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e0_data, sigma2_e0_flux, sigma2_e0_u0, sigma2_e0_v0))
+        logger.log(5, 'Star hsm_error. Relative un-fudged contributions for e1 from data, flux, u0, and v0 are (in sigma2):')
+        logger.log(5, '{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e1_data, sigma2_e1_flux, sigma2_e1_u0, sigma2_e1_v0))
+        logger.log(5, 'Star hsm_error. Relative un-fudged contributions for e2 from data, flux, u0, and v0 are (in sigma2):')
+        logger.log(5, '{0:.2e} {1:.2e} {2:.2e} {3:.2e}'.format(sigma2_e2_data, sigma2_e2_flux, sigma2_e2_u0, sigma2_e2_v0))
 
     if return_debug:
         return sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2, \

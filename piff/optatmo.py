@@ -271,7 +271,7 @@ class OpticalWavefrontPSF(PSF):
         Constant optical sigma or kolmogorov, g1, g2 in model
         misalignments in interpolant: these are the interp.misalignment terms
     """
-    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', cut_ccds=[], guess_start=False, logger=None):
+    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', guess_start=False, use_gradient=True, logger=None):
         """
 
         :param knn_file_name:               Fits file containing the wavefront
@@ -288,8 +288,8 @@ class OpticalWavefrontPSF(PSF):
                                             [default: [1e10, 1e10, 1e10], which should be >>> any measured values]
         :param fitter_kwargs:               kwargs to pass to fitter
         :param fitter_algorithm:            fitter to use for measuring wavefront. Default is minuit but also can use lmfit
-        :param cut_ccds:                    list of ccds to remove from decaminfo
         :param guess_start:                 if True, will adjust fitter kwargs for best guess
+        :param use_gradient:                if True, will use gradient functions in fit
         """
 
         # TODO: trying with distance weighting to 40 nearest neighbors
@@ -298,12 +298,12 @@ class OpticalWavefrontPSF(PSF):
 
         # it turns out this part can also be slow!
         if logger:
-            logger.debug("Making interp")
+            logger.info("Making interp")
         self.interp = DECamWavefront(knn_file_name, knn_extname, logger=logger, **self.interp_kwargs)
 
         if logger:
-            logger.debug("Making DECamInfo")
-        self.decaminfo = DECamInfo(cut_ccds=cut_ccds)
+            logger.info("Making DECamInfo")
+        self.decaminfo = DECamInfo()
 
         self.weights = np.array(weights)
         # normalize weights
@@ -328,19 +328,19 @@ class OpticalWavefrontPSF(PSF):
             'template': template,
             'engine': engine,
             'guess_start': guess_start,
+            'use_gradient': use_gradient,
             }
 
         # load up the model after kwargs are set
         if logger:
-            logger.debug("Loading optical engine")
+            logger.info("Loading optical engine")
         self._engines = ['galsim', 'galsim_fast']
         self._model(template=template, engine=engine, **model_kwargs)
 
 
         # put in the variable names and initial values
         self.fitter_kwargs = {
-            # note: r0 is in meters. Use 0.976 * lam / r0 = fwhm. This is odd, but lam is in nm, r0 is in m, and fwhm is in pixels?
-            'r0': 0.15, 'fix_r0': False,   'limit_r0': (0.01, 0.25), 'error_r0': 1e-2,
+            'r0': 0.15, 'fix_r0': False,   'limit_r0': (0.01, 0.4), 'error_r0': 1e-2,
             'g1': 0,   'fix_g1': False,   'limit_g1': (-0.2, 0.2),  'error_g1': 1e-2,
             'g2': 0,   'fix_g2': False,   'limit_g2': (-0.2, 0.2),  'error_g2': 1e-2,
             }
@@ -352,8 +352,8 @@ class OpticalWavefrontPSF(PSF):
                 self.fitter_kwargs[zkey] = 0
                 # fix
                 self.fitter_kwargs['fix_' + zkey] = False
-                # limit
-                self.fitter_kwargs['limit_' + zkey] = (-2, 2)
+                # we shall not specify in advance a zernike limit
+                # self.fitter_kwargs['limit_' + zkey] = (-2, 2)
                 # initial guess for error in parameter
                 if dxy == 'd':
                     zerror = 1e-2
@@ -369,15 +369,20 @@ class OpticalWavefrontPSF(PSF):
                 'print_level': 2,
                 'errordef': 1.0,  # guesstimated
                 })
+        elif self.kwargs['fitter_algorithm'] == 'lmfit':
+            pass
+        elif self.kwargs['fitter_algorithm'] == 'scipy':
+            pass
         else:
             raise NotImplementedError('fitter {0} not implemented.'.format(self.kwargs['fitter_algorithm']))
 
         # update with user kwargs
         self.fitter_kwargs.update(fitter_kwargs)
 
-        self._update_psf_params(logger=logger, **self.fitter_kwargs)
+        self.update_psf_params(logger=logger, **self.fitter_kwargs)
 
         self._time = time()
+        self._n_iter = 0
 
         self.step_sizes = [
             1e-4, 1e-4, 1e-4,  # sizes
@@ -406,12 +411,11 @@ class OpticalWavefrontPSF(PSF):
         """Disable atmosphere within OpticalWavefrontPSF"""
         if logger:
             logger.info("Disabling atmosphere in OpticalWavefrontPSF")
-        self._update_psf_params(r0=None, g1=None, g2=None, logger=logger)
-        # double plus sure we disable it
-        self.model.kwargs['r0'] = None
-        self.model.kolmogorov_kwargs['r0'] = None
-        self.model.g1 = None
-        self.model.g2 = None
+        self.update_psf_params(r0=None, g1=None, g2=None, logger=logger)
+        # note it in fitter_kwargs
+        self.fitter_kwargs['r0'] = None
+        self.fitter_kwargs['g1'] = None
+        self.fitter_kwargs['g2'] = None
 
     def enable_atmosphere(self, r0, g1, g2, logger=None):
         """Turn the atmosphere back on.
@@ -422,10 +426,13 @@ class OpticalWavefrontPSF(PSF):
 
         Note: r0, g1, g2 might still be fixed.
         """
-        self.model.kwargs['r0'] = r0
-        self.model.kolmogorov_kwargs['r0'] = r0
-        self.model.g1 = g1
-        self.model.g2 = g2
+        if logger:
+            logger.info("Enabling atmosphere in OpticalWavefrontPSF")
+        self.update_psf_params(r0=r0, g1=g1, g2=g2, logger=logger)
+        # note it in fitter_kwargs
+        self.fitter_kwargs['r0'] = r0
+        self.fitter_kwargs['g1'] = g1
+        self.fitter_kwargs['g2'] = g2
 
     def _model(self, template='des', engine='galsim_fast', **model_kwargs):
         """Load up the modeling parameters
@@ -458,14 +465,14 @@ class OpticalWavefrontPSF(PSF):
         errors = []
         for star_i, star in enumerate(stars):
             if logger:
-                logger.debug("Measuring error of star {0}".format(star_i))
+                logger.log(5, "Measuring error of star {0}".format(star_i))
             try:
                 sigma_flux, sigma_u0, sigma_v0, sigma_e0, sigma_e1, sigma_e2 = hsm_error(star, logger=logger)
                 errors.append([sigma_e0, sigma_e1, sigma_e2])
             except (ValueError, ModelFitError, RuntimeError):
                 # hsm nan'd out
                 if logger:
-                    logger.debug("Star failed moment parameter; setting errors to nan!")
+                    logger.log(5, "Star failed moment parameter; setting errors to nan!")
                 errors.append([np.nan, np.nan, np.nan])
         errors = np.array(errors)
         return errors
@@ -504,12 +511,12 @@ class OpticalWavefrontPSF(PSF):
         shapes = []
         for star_i, star in enumerate(stars):
             if logger:
-                logger.debug("Measuring shape of star {0}".format(star_i))
+                logger.log(5, "Measuring shape of star {0}".format(star_i))
             flux, u0, v0, sigma, g1, g2, flag = hsm(star, logger=logger)
             if flag != 0:
                 # failed fit!
                 if logger:
-                    logger.debug("Star failed moment parameter; setting shapes to nan!")
+                    logger.log(5, "Star failed moment parameter; setting shapes to nan!")
                 shapes.append([np.nan, np.nan, np.nan])
             else:
                 # convert g to normalized e
@@ -614,9 +621,12 @@ class OpticalWavefrontPSF(PSF):
         """
         self._fit_init(stars, wcs, pointing, profiles=profiles, logger=logger)
 
-        # based on fitter, do _minuit_fit or (TODO) _lmfit_fit
         if self.kwargs['fitter_algorithm'] == 'minuit':
             self._minuit_fit(logger=logger)
+        elif self.kwargs['fitter_algorithm'] == 'lmfit':
+            self._lmfit_fit(logger=logger)
+        elif self.kwargs['fitter_algorithm'] == 'scipy':
+            self._scipy_fit(logger=logger)
         else:
             raise NotImplementedError('fitter {0} not yet implmented!'.format(self.kwargs['fitter_algorithm']))
 
@@ -816,6 +826,48 @@ class OpticalWavefrontPSF(PSF):
 
         return model_shapes
 
+
+    def _analytic_chi2(self, vals_in, stars=None, logger=None):
+        if not stars:
+            stars = self._fit_stars
+            actual_shapes = self._shapes
+            errors = self._errors
+        else:
+            actual_shapes = self._measure_shapes(stars, logger=logger)
+            errors = self._measure_shape_errors(stars, logger=logger)
+
+        # based on fitter_kwargs translate vals_in to the misalignments
+        vals = []
+        key_i = 0
+        for key in self.keys:
+            if key == 'g1' or key == 'g2':
+                continue
+            if not self.fitter_kwargs['fix_' + key]:
+                vals.append(vals_in[key_i])
+                key_i += 1
+            else:
+                vals.append(self.fitter_kwargs[key])
+
+        # get coordinates
+        zernikes, u, v, fx, fy = self._stars_to_parameters(stars, logger=logger)
+
+        # apply misalignments
+        params = self._analytic_misalign_zernikes(zernikes, fx, fy, *vals)
+
+        # psq
+        psq, pindx = self._analytic_parameterization(params)
+
+        # shapes
+        model_shapes = self._analytic_params_to_shapes(psq)
+
+        # chi2 of each star and shape
+        chi2_long = np.sum((model_shapes - actual_shapes) ** 2 / errors ** 2, axis=0)
+
+        # total chi2
+        chi_squared = np.sum(self.weights * chi2_long) / (3 * len(stars) - len(vals_in)) / np.sum(self.weights)
+
+        return chi_squared
+
     def _analytic_fit(self, logger=None):
         """Fit interpolated PSF model to star data by analytic relation. Should get us pretty close.
 
@@ -824,39 +876,6 @@ class OpticalWavefrontPSF(PSF):
         :returns guess_values:  Reasonable first guesses for misalignment
         """
         from scipy.optimize import minimize
-
-        zernikes, u, v, fx, fy = self._stars_to_parameters(self._fit_stars, logger=logger)
-
-        # dynamically define function based on fixed parameters
-        def chi2(vals_in):
-            # based on fitter_kwargs translate vals_in to the misalignments
-            vals = []
-            key_i = 0
-            for key in self.keys:
-                if key == 'g1' or key == 'g2':
-                    continue
-                if not self.fitter_kwargs['fix_' + key]:
-                    vals.append(vals_in[key_i])
-                    key_i += 1
-                else:
-                    vals.append(self.fitter_kwargs[key])
-
-            # apply misalignments
-            params = self._analytic_misalign_zernikes(zernikes, fx, fy, *vals)
-
-            # psq
-            psq, pindx = self._analytic_parameterization(params)
-
-            # shapes
-            model_shapes = self._analytic_params_to_shapes(psq)
-
-            # chi2 of each star and shape
-            chi2_long = np.sum((model_shapes - self._shapes) ** 2 / self._errors ** 2, axis=0)
-
-            # total chi2
-            chi_squared = np.sum(self.weights * chi2_long) / (3 * len(self._fit_stars) - len(vals_in)) / np.sum(self.weights)
-
-            return chi_squared
 
         # get p0 based on fitter_kwargs
         p0 = []
@@ -873,14 +892,14 @@ class OpticalWavefrontPSF(PSF):
 
         # minimize chi2
         if logger:
-            logger.info('Starting analytic guess. Initial chi2 = {0:.2e}'.format(chi2(p0)))
-        res = minimize(chi2, p0)
+            logger.info('Starting analytic guess. Initial chi2 = {0:.2e}'.format(self._analytic_chi2(p0)))
+        res = minimize(self._analytic_chi2, p0, args=(None, logger,))
         if logger:
-            logger.warn('Analytic finished. Final chi2 = {0:.2e}'.format(chi2(res.x)))
+            logger.warn('Analytic finished. Final chi2 = {0:.2e}'.format(self._analytic_chi2(res.x)))
 
+        # update fitter_kwargs
         if logger:
             logger.info('Analytic guess parameters:')
-        # update fitter_kwargs
         key_i = 0
         for key in self.keys:
             if key == 'g1' or key == 'g2':
@@ -893,7 +912,92 @@ class OpticalWavefrontPSF(PSF):
                     logger.info('{0}:\t{1:.2e}'.format(key, val))
 
         # update fit parameters based on fitter_kwargs
-        self._update_psf_params(logger=logger, **self.fitter_kwargs)
+        self.update_psf_params(logger=logger, **self.fitter_kwargs)
+
+    def _scipy_gradient(self, vals, logger=None):
+
+        # update fitter_kwargs with vals
+        key_i = 0
+        params = {}
+        for key in self.keys:
+            if not self.fitter_kwargs['fix_' + key]:
+                params[key] = vals[key_i]
+                key_i += 1
+        gradients, gradients_l, stencils, fx, fy = self.chi2_gradient(
+            stars=self._fit_stars, logger=logger, **params)
+
+        return gradients
+
+    def _scipy_chi2(self, vals, logger=None):
+
+        # update fitter_kwargs with vals
+        key_i = 0
+        params = {}
+        for key in self.keys:
+            if not self.fitter_kwargs['fix_' + key]:
+                params[key] = vals[key_i]
+                key_i += 1
+
+        # keep track in fitter_kwargs
+        self.fitter_kwargs.update(params)
+        # update psf params
+        self.update_psf_params(logger=logger, **params)
+
+        # get chi2
+        reduced_chi2 = self.chi2(self._fit_stars, logger=logger)
+
+        return reduced_chi2
+
+    def _scipy_fit(self, logger=None):
+        # TODO: add max_iterations
+        """Fit interpolated PSF model to star data using minimize from scipy
+
+        :param logger:          A logger object for logging debug info. [default: None]
+        """
+        from scipy.optimize import minimize
+
+        # create x0
+        x0 = []
+        bounds = []
+        for key in self.keys:
+            if not self.fitter_kwargs['fix_' + key]:
+                val = self.fitter_kwargs[key]
+                x0.append(val)
+                if 'limit_' + key in self.fitter_kwargs:
+                    bounds.append(self.fitter_kwargs['limit_' + key])
+                else:
+                    bounds.append((None, None))
+
+        if self.kwargs['use_gradient']:
+            jac = self._scipy_gradient
+        else:
+            jac = None
+
+        # minimize chi2
+        if logger:
+            logger.info("Start fitting Optical fit using scipy. Initial chi2 = {0:.2e}".format(self._scipy_chi2(x0)))
+        res = minimize(self._scipy_chi2, x0, args=(logger,), jac=jac, bounds=bounds)
+
+        if logger:
+            logger.warn('Optical fit with scipy finished. Final chi2 = {0:.2e}. Success is {1} and message is {2}'.format(self._scipy_chi2(res.x), res.success, res.message))
+
+        # update fitter_kwargs
+        if logger:
+            logger.info('Optical fit from scipy parameters:')
+        key_i = 0
+        for key in self.keys:
+            if not self.fitter_kwargs['fix_' + key]:
+                val = res.x[key_i]
+                self.fitter_kwargs[key] = val
+                if logger:
+                    logger.info('{0}:\t{1:.2e}'.format(key, val))
+
+                # TODO: try putting in errors based on jacobian?
+
+                key_i += 1
+
+        # update fit parameters based on fitter_kwargs
+        self.update_psf_params(logger=logger, **self.fitter_kwargs)
 
     def _minuit_fit(self, logger=None):
         """Fit interpolated PSF model to star data using iminuit implementation of Minuit
@@ -901,12 +1005,13 @@ class OpticalWavefrontPSF(PSF):
         :param logger:          A logger object for logging debug info. [default: None]
         """
         from iminuit import Minuit
-
-        self._n_iter = 0
-
         if logger:
-            logger.debug("Creating minuit object")
-        self._minuit = Minuit(self._fit_func, grad_fcn=self._grad_func_minuit, forced_parameters=self.keys, **self.fitter_kwargs)
+            logger.info("Start fitting Optical fit using minuit")
+        if self.kwargs['use_gradient']:
+            grad_fcn = self._minuit_gradient
+        else:
+            grad_fcn = None
+        self._minuit = Minuit(self._minuit_chi2, grad_fcn=grad_fcn, forced_parameters=self.keys, **self.fitter_kwargs)
         # run the fit and solve! This will update the interior parameters
         if self.kwargs['max_iterations'] > 0:
             if logger:
@@ -916,54 +1021,107 @@ class OpticalWavefrontPSF(PSF):
             # self._minos = self._minuit.minos()
             # these are the best fit parameters
 
-            # update params to best values
-            if logger:
-                logger.debug("Minuit Fitargs:\n*****\n")
-                for key in self._minuit.fitarg:
-                    logger.debug("{0}: {1}\n".format(key, self._minuit.fitarg[key]))
-                logger.debug("Minuit Values:\n*****\n")
-                for key in self._minuit.values:
-                    logger.debug("{0}: {1}\n".format(key, self._minuit.values[key]))
-            self._update_psf_params(logger=logger, **self._minuit.values)
-
             # save params and errors to the kwargs
             self.fitter_kwargs.update(self._minuit.fitarg)
             if logger:
-                logger.debug("Minuit kwargs are now:\n*****\n")
-                for key in self.fitter_kwargs:
-                    logger.debug("{0}: {1}\n".format(key, self.fitter_kwargs[key]))
+                logger.info('Optical fit from minuit parameters:')
+                for key in self.keys:
+                    if not self.fitter_kwargs['fix_' + key]:
+                        val = self.fitter_kwargs[key]
+                        err = self.fitter_kwargs['error_' + key]
+                        logstring = '{0}:\t{1:+.2e}\t{2:+.2e'.format(key, val, err)
+                        logger.info(logstring)
+            # update fit parameters based on fitter_kwargs
+            self.update_psf_params(logger=logger, **self.fitter_kwargs)
         else:
             if logger:
                 logger.info('User specified {0} steps, so moving on without running migrad'.format(self.kwargs['max_iterations']))
 
-    def _lmfit_fit(self, stars, logger=None):
+    def _lmfit_resid(self, lmparams, logger=None):
+
+        # convert lmparams instance
+        params = lmparams.valuesdict()
+
+        # keep track in fitter_kwargs
+        self.fitter_kwargs.update(params)
+        # update psf params
+        self.update_psf_params(logger=logger, **params)
+        # get chi (not chi2s!)
+        reduced_chi2, dof, chi2, indx, chi_l = self.chi2(self._fit_stars, full=True, logger=logger)
+
+        # chi_l is shaped (Nstar, Nshapes)
+        # using indx, remove Nans, and multiply by sqrt(weight) since usually weight * chi2
+        chi_flat = (np.sqrt(self.weights[None]) * chi_l[indx]).flatten()
+        return chi_flat
+
+    def _lmfit_fit(self, logger=None):
+        # TODO: add max_iterations
         """Fit interpolated PSF model to star data using lmfit implementation of Levenberg-Marquardt minimization
 
-        :parma stars:           Stars used in fit
         :param logger:          A logger object for logging debug info. [default: None]
         """
+        import lmfit
         if logger:
-            logger.info("Start fitting Optical fit using lmfit and %s stars", len(stars))
-        # import lmfit
-        # results = lmfit.minimize(resid_func, params, args)
-        raise NotImplementedError("lmfit not currently implemented")
+            logger.info("Start fitting Optical fit using lmfit")
 
-    def _update_psf_params(self,
-                           r0=np.nan, g1=np.nan, g2=np.nan,
-                           z04d=np.nan, z04x=np.nan, z04y=np.nan,
-                           z05d=np.nan, z05x=np.nan, z05y=np.nan,
-                           z06d=np.nan, z06x=np.nan, z06y=np.nan,
-                           z07d=np.nan, z07x=np.nan, z07y=np.nan,
-                           z08d=np.nan, z08x=np.nan, z08y=np.nan,
-                           z09d=np.nan, z09x=np.nan, z09y=np.nan,
-                           z10d=np.nan, z10x=np.nan, z10y=np.nan,
-                           z11d=np.nan, z11x=np.nan, z11y=np.nan,
-                           logger=None, **kwargs):
+        # create lmparameters instance
+        params = lmfit.Parameters()
+        # Order of params is important!
+        # step through keys
+        for key in self.keys():
+            value = self.fitter_kwargs[key]
+            vary = not self.fitter_kwargs['fix_' + key]
+            if 'limit_' + key in self.fitter_kwargs:
+                min, max = self.fitter_kwargs['limit_' + key]
+            else:
+                min, max = (None, None)
+            params.add(key, value=value, vary=vary, min=min, max=max)
+
+        # fit params
+        results = lmfit.minimize(self._lmfit_resid, params, args=(logger,))
+
+        # update fitter_kwargs
+        if logger:
+            logger.info('Optical fit from lmfit parameters:')
+        key_i = 0
+        for key in self.keys:
+            if not self.fitter_kwargs['fix_' + key]:
+                val = results.params.valuesdict()[key]
+                self.fitter_kwargs[key] = val
+                if logger:
+                    logstring = '{0}:\t{1:+.2e}'.format(key, val)
+
+                if results.errorbars:
+                    err = results.params[key].stderr
+                    self.fitter_kwargs['error_' + key] = err
+                    logstring += '\t{0:.2e}'.format(err)
+
+                if logger:
+                    logger.info(logstring)
+
+                key_i += 1
+
+
+
+    def _update_psf_params(self, **kwargs):
+        # backward compatability
+        return self.update_psf_params(**kwargs)
+
+    def update_psf_params(self,
+                          r0=np.nan, g1=np.nan, g2=np.nan,
+                          z04d=np.nan, z04x=np.nan, z04y=np.nan,
+                          z05d=np.nan, z05x=np.nan, z05y=np.nan,
+                          z06d=np.nan, z06x=np.nan, z06y=np.nan,
+                          z07d=np.nan, z07x=np.nan, z07y=np.nan,
+                          z08d=np.nan, z08x=np.nan, z08y=np.nan,
+                          z09d=np.nan, z09x=np.nan, z09y=np.nan,
+                          z10d=np.nan, z10x=np.nan, z10y=np.nan,
+                          z11d=np.nan, z11x=np.nan, z11y=np.nan,
+                          logger=None, **kwargs):
         # update model
         old_r0 = self.model.kolmogorov_kwargs['r0']
         old_g1 = self.model.g1
         old_g2 = self.model.g2
-        # TODO: should these ONLY be r0 == r0 nan checks? I am worried these won't get reset when I load. On the other hand, we also save the model and interp
         if r0 == r0:
             self.model.kolmogorov_kwargs['r0'] = r0
             self.model.kwargs['r0'] = r0
@@ -1012,37 +1170,67 @@ class OpticalWavefrontPSF(PSF):
                 # old misalignment could be None on first iteration
                 logger.debug('New misalignment is \n{0}'.format(misalignment_print))
 
-    def chi2(self, stars, full=False, logger=None):
-        # using shapes, return chi2 of model
-        shapes = self._measure_shapes(self.drawStarList(self._fit_stars), logger=logger)
+    def chi2(self, stars=None, full=False, logger=None):
+        if not stars:
+            stars = self._fit_stars
+            actual_shapes = self._shapes
+            errors = self._errors
+        else:
+            actual_shapes = self._measure_shapes(stars, logger=logger)
+            errors = self._measure_shape_errors(stars, logger=logger)
+
+        shapes = self._measure_shapes(self.drawStarList(stars), logger=logger)
 
         # calculate chisq
-        # chi2 = np.sum(np.square((shapes - self._shapes) / self.kwargs['error_estimate']), axis=0)
-        # dof = shapes.size
-        chi2_l = np.square((shapes - self._shapes) / (self.kwargs['error_estimate'] * self._errors))
+        chi_l = (shapes - actual_shapes) / (self.kwargs['error_estimate'] * errors)
+        chi2_l = np.square(chi_l)
         indx = ~np.any(chi2_l != chi2_l, axis=1)
         chi2 = np.sum(chi2_l[indx], axis=0)
         dof = sum(indx)
-        chi2_sum = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
+        reduced_chi2 = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
 
         if logger:
             if sum(indx) != len(indx):
-                logger.info('Warning! We are using {0} stars out of {1} stars at step {2} of fit'.format(sum(indx), len(indx), self._n_iter))
+                logger.info('Warning! We are using {0} stars out of {1} stars'.format(sum(indx), len(indx)))
             logger.debug('chi2 array:')
-            logger.debug('chi2 summed: {0}'.format(chi2_sum))
+            logger.debug('chi2 summed: {0}'.format(reduced_chi2))
             logger.debug('chi2 in each shape: {0}'.format(chi2))
             logger.debug('chi2 with weights: {0}'.format(self.weights * chi2))
             logger.debug('sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
             logger.debug('chi2 for each star:\n{0}'.format(chi2_l))
 
+            # TODO: extract from psf parameters
+            log = ['\n',
+                    '*******************************************************************************\n',
+                    '* time \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
+                    '*******************************************************************************\n',
+                    '*  \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
+                    '*******************************************************************************\n',
+                    '* size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(
+                        self.model.kwargs['r0'], self.model.g1, self.model.g2),]
+            for i in range(0, 8):
+                log.append('* z{0}   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(
+                    i + 4, self.interp.misalignment[i][0], self.interp.misalignment[i][1],
+                    self.interp.misalignment[i][2]))
+            log += [
+                    '*******************************************************************************\n',
+                    '* chi2 \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(*(chi2 / dof)),
+                    '*******************************************************************************',
+                    ]
+            if self._n_iter % 50 == 0:
+                logger.warning(''.join(log))
+            else:
+                logger.info(''.join(log))
+        self._n_iter += 1
+
         if full:
-            return chi2_sum, dof, chi2, indx, chi2_l
+            return reduced_chi2, dof, chi2, indx, chi_l
         else:
-            return chi2_sum
+            return reduced_chi2
 
     # TODO: stars, logger, option for doing all, fix, step_sizes, keys
     # would be nice to make this a static function
-    def gradient(self, stars,
+    def chi2_gradient(self, stars,
                  r0, g1, g2,
                  z04d, z04x, z04y,
                  z05d, z05x, z05y,
@@ -1114,12 +1302,12 @@ class OpticalWavefrontPSF(PSF):
                                   z09d=z09d, z09x=z09x, z09y=z09y,
                                   z10d=z10d, z10x=z10x, z10y=z10y,
                                   z11d=z11d, z11x=z11x, z11y=z11y,
-                                  logger=logger)
+                                  )
                     params[key] = params[key] + term * step_size
 
                     # update psf
-                    self._update_psf_params(logger=logger, **params)
-                    chi2_sum, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
+                    self.update_psf_params(logger=logger, **params)
+                    reduced_chi2, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
 
                     stencil_chi2_l.append(chi2_l)
 
@@ -1133,37 +1321,11 @@ class OpticalWavefrontPSF(PSF):
         stencils = np.array(stencils)
         gradients_l = np.array(gradients_l)
         # convert gradients_l into gradients
-        # recall that chi2_sum = np.sum(self.weights * np.sum(chi2_l[indx], axis=0)) * 1. / sum(indx) / np.sum(self.weights)
+        # recall that reduced_chi2 = np.sum(self.weights * np.sum(chi2_l[indx], axis=0)) * 1. / sum(indx) / np.sum(self.weights)
         gradients = np.sum(self.weights[None] * np.nansum(gradients_l, axis=1), axis=1) * 1. / len(self._fit_stars) / np.sum(self.weights)
 
-        return gradients, gradients_l, stencils, fx, fy
-
-    def _grad_func_minuit(self,
-                          r0, g1, g2,
-                          z04d, z04x, z04y,
-                          z05d, z05x, z05y,
-                          z06d, z06x, z06y,
-                          z07d, z07x, z07y,
-                          z08d, z08x, z08y,
-                          z09d, z09x, z09y,
-                          z10d, z10x, z10y,
-                          z11d, z11x, z11y,
-                          ):
-
-        gradients, gradients_l, stencils, fx, fy = self.gradient(
-            self._fit_stars,
-            r0, g1, g2,
-            z04d, z04x, z04y,
-            z05d, z05x, z05y,
-            z06d, z06x, z06y,
-            z07d, z07x, z07y,
-            z08d, z08x, z08y,
-            z09d, z09x, z09y,
-            z10d, z10x, z10y,
-            z11d, z11x, z11y,
-            self._logger)
-
-        if self._logger:
+        # print gradient log info
+        if logger:
             log = ['\n',
                     '**************************************************************************************\n',
                     '* time        \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
@@ -1181,64 +1343,68 @@ class OpticalWavefrontPSF(PSF):
                     '* d chi2 d z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[24], gradients[25], gradients[26]),
                     '**************************************************************************************\n',
                     ]
-            self._logger.info(''.join(log))
+            logger.info(''.join(log))
+
+        return gradients, gradients_l, stencils, fx, fy
+
+    def _minuit_gradient(self,
+                         r0, g1, g2,
+                         z04d, z04x, z04y,
+                         z05d, z05x, z05y,
+                         z06d, z06x, z06y,
+                         z07d, z07x, z07y,
+                         z08d, z08x, z08y,
+                         z09d, z09x, z09y,
+                         z10d, z10x, z10y,
+                         z11d, z11x, z11y,
+                         ):
+
+        gradients, gradients_l, stencils, fx, fy = self.chi2_gradient(
+            self._fit_stars,
+            r0, g1, g2,
+            z04d, z04x, z04y,
+            z05d, z05x, z05y,
+            z06d, z06x, z06y,
+            z07d, z07x, z07y,
+            z08d, z08x, z08y,
+            z09d, z09x, z09y,
+            z10d, z10x, z10y,
+            z11d, z11x, z11y,
+            self._logger)
 
         return gradients
 
-    def _fit_func(self,
-                  r0, g1, g2,
-                  z04d, z04x, z04y,
-                  z05d, z05x, z05y,
-                  z06d, z06x, z06y,
-                  z07d, z07x, z07y,
-                  z08d, z08x, z08y,
-                  z09d, z09x, z09y,
-                  z10d, z10x, z10y,
-                  z11d, z11x, z11y,
-                  ):
+    def _minuit_chi2(self,
+                     r0, g1, g2,
+                     z04d, z04x, z04y,
+                     z05d, z05x, z05y,
+                     z06d, z06x, z06y,
+                     z07d, z07x, z07y,
+                     z08d, z08x, z08y,
+                     z09d, z09x, z09y,
+                     z10d, z10x, z10y,
+                     z11d, z11x, z11y,
+                     ):
 
-        logger = self._logger
-        # update psf
-        self._update_psf_params(r0, g1, g2,
-                                z04d, z04x, z04y,
-                                z05d, z05x, z05y,
-                                z06d, z06x, z06y,
-                                z07d, z07x, z07y,
-                                z08d, z08x, z08y,
-                                z09d, z09x, z09y,
-                                z10d, z10x, z10y,
-                                z11d, z11x, z11y,
-                                logger=logger,
-                                )
+        # update fitter_kwargs and pass along
+        params = dict(r0=r0, g1=g1, g2=g2,
+                      z04d=z04d, z04x=z04x, z04y=z04y,
+                      z05d=z05d, z05x=z05x, z05y=z05y,
+                      z06d=z06d, z06x=z06x, z06y=z06y,
+                      z07d=z07d, z07x=z07x, z07y=z07y,
+                      z08d=z08d, z08x=z08x, z08y=z08y,
+                      z09d=z09d, z09x=z09x, z09y=z09y,
+                      z10d=z10d, z10x=z10x, z10y=z10y,
+                      z11d=z11d, z11x=z11x, z11y=z11y,
+                      )
+        # keep track in fitter_kwargs
+        self.fitter_kwargs.update(params)
+        # update psf params
+        self.update_psf_params(logger=self._logger, **params)
 
-        chi2_sum, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
+        reduced_chi2 = self.chi2(self._fit_stars, logger=self._logger)
 
-        if logger:
-            log = ['\n',
-                    '*******************************************************************************\n',
-                    '* time \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
-                    '*******************************************************************************\n',
-                    '*  \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
-                    '*******************************************************************************\n',
-                    '* size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(r0, g1, g2),
-                    '* z4   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z04d, z04x, z04y),
-                    '* z5   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z05d, z05x, z05y),
-                    '* z6   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z06d, z06x, z06y),
-                    '* z7   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z07d, z07x, z07y),
-                    '* z8   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z08d, z08x, z08y),
-                    '* z9   \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z09d, z09x, z09y),
-                    '* z10  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z10d, z10x, z10y),
-                    '* z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(z11d, z11x, z11y),
-                    '*******************************************************************************\n',
-                    '* chi2 \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(*(chi2 / dof)),
-                    '*******************************************************************************',
-                    ]
-            if self._n_iter % 50 == 0:
-                logger.warning(''.join(log))
-            else:
-                logger.info(''.join(log))
-        self._n_iter += 1
-        return chi2_sum
+        return reduced_chi2
 
     def drawStarList(self, stars):
         """Generate PSF images for given stars.
@@ -1343,11 +1509,11 @@ class OpticalWavefrontPSF(PSF):
         self.model.kwargs['r0'] = self.model.kolmogorov_kwargs['r0']
         self.model.write(fits, extname + '_model', logger)
         if logger:
-            logger.debug("Wrote the PSF model to extension %s",extname + '_model')
+            logger.info("Wrote the PSF model to extension %s",extname + '_model')
 
         self.interp.write(fits, extname + '_interp', logger)
         if logger:
-            logger.debug("Wrote the PSF interp to extension %s",extname + '_interp')
+            logger.info("Wrote the PSF interp to extension %s",extname + '_interp')
 
     def _finish_read(self, fits, extname, logger):
         """Read in misalignment parameters
@@ -1374,9 +1540,10 @@ class OpticalWavefrontPSF(PSF):
                 self.fitter_kwargs[combined_key] = data[combined_key][0]
 
         # do the awkward misalignment stuff
-        self._update_psf_params(logger=logger, **self.fitter_kwargs)
+        self.update_psf_params(logger=logger, **self.fitter_kwargs)
 
         self._time = time()
+        self._n_iter = 0
 
         # load model and interp
         self.model = Model.read(fits, extname + '_model', logger)
