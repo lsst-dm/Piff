@@ -976,7 +976,7 @@ class OpticalWavefrontPSF(PSF):
         # minimize chi2
         if logger:
             logger.info("Start fitting Optical fit using scipy. Initial chi2 = {0:.2e}".format(self._scipy_chi2(x0)))
-        res = minimize(self._scipy_chi2, x0, args=(logger,), jac=jac, bounds=bounds)
+        res = minimize(self._scipy_chi2, x0, args=(logger,), jac=jac, bounds=bounds, options={'maxiter': self.kwargs['max_iterations']})
 
         if logger:
             logger.warn('Optical fit with scipy finished. Final chi2 = {0:.2e}. Success is {1} and message is {2}'.format(self._scipy_chi2(res.x), res.success, res.message))
@@ -1029,7 +1029,7 @@ class OpticalWavefrontPSF(PSF):
                     if not self.fitter_kwargs['fix_' + key]:
                         val = self.fitter_kwargs[key]
                         err = self.fitter_kwargs['error_' + key]
-                        logstring = '{0}:\t{1:+.2e}\t{2:+.2e'.format(key, val, err)
+                        logstring = '{0}:\t{1:+.2e}\t{2:+.2e}'.format(key, val, err)
                         logger.info(logstring)
             # update fit parameters based on fitter_kwargs
             self.update_psf_params(logger=logger, **self.fitter_kwargs)
@@ -1055,7 +1055,6 @@ class OpticalWavefrontPSF(PSF):
         return chi_flat
 
     def _lmfit_fit(self, logger=None):
-        # TODO: add max_iterations
         """Fit interpolated PSF model to star data using lmfit implementation of Levenberg-Marquardt minimization
 
         :param logger:          A logger object for logging debug info. [default: None]
@@ -1068,7 +1067,7 @@ class OpticalWavefrontPSF(PSF):
         params = lmfit.Parameters()
         # Order of params is important!
         # step through keys
-        for key in self.keys():
+        for key in self.keys:
             value = self.fitter_kwargs[key]
             vary = not self.fitter_kwargs['fix_' + key]
             if 'limit_' + key in self.fitter_kwargs:
@@ -1078,7 +1077,7 @@ class OpticalWavefrontPSF(PSF):
             params.add(key, value=value, vary=vary, min=min, max=max)
 
         # fit params
-        results = lmfit.minimize(self._lmfit_resid, params, args=(logger,))
+        results = lmfit.minimize(self._lmfit_resid, params, args=(logger,), maxfev=self.kwargs['max_iterations'])
 
         # update fitter_kwargs
         if logger:
@@ -1218,9 +1217,9 @@ class OpticalWavefrontPSF(PSF):
                     '*******************************************************************************',
                     ]
             if self._n_iter % 50 == 0:
-                logger.warning(''.join(log))
-            else:
                 logger.info(''.join(log))
+            else:
+                logger.debug(''.join(log))
         self._n_iter += 1
 
         if full:
@@ -1306,8 +1305,10 @@ class OpticalWavefrontPSF(PSF):
                     params[key] = params[key] + term * step_size
 
                     # update psf
-                    self.update_psf_params(logger=logger, **params)
-                    reduced_chi2, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True, logger=logger)
+                    self.update_psf_params(**params)
+                    reduced_chi2, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True)
+                    # discount these calls for the purposes of displaying _n_iter
+                    self._n_iter -= 1
 
                     stencil_chi2_l.append(chi2_l)
 
@@ -1343,7 +1344,7 @@ class OpticalWavefrontPSF(PSF):
                     '* d chi2 d z11  \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(gradients[24], gradients[25], gradients[26]),
                     '**************************************************************************************\n',
                     ]
-            logger.info(''.join(log))
+            logger.debug(''.join(log))
 
         return gradients, gradients_l, stencils, fx, fy
 
