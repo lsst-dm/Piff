@@ -307,7 +307,7 @@ class PixelGrid(Model):
         star = self.reflux(star, fit_center=False, logger=logger)
         return star
 
-    def fit(self, star, logger=None):
+    def fit(self, star, profile=None, logger=None):
         """Fit the Model to the star's data to yield iterative improvement on
         its PSF parameters, their uncertainties, and flux (and center, if free).
 
@@ -316,7 +316,7 @@ class PixelGrid(Model):
 
         :returns: a new Star instance with updated fit information
         """
-        star1 = self.chisq(star)  # Get chisq Taylor expansion for linearized model
+        star1 = self.chisq(star, profile=profile)  # Get chisq Taylor expansion for linearized model
         ### Check for non-pos-def
         ###S = np.linalg.svd(star1.fit.alpha,compute_uv=False)
         ###print("  .in fit(), min SV:",np.min(S))###
@@ -362,7 +362,8 @@ class PixelGrid(Model):
                                    - 2 * np.dot(star1.fit.beta, dparam))
         return Star(star1.data, starfit2)
 
-    def chisq(self, star, logger=None):
+    def chisq(self, star, profile=None, logger=None):
+        # TODO: profile goes in here
         """Calculate dependence of chi^2 = -2 log L(D|p) on PSF parameters for single star.
         as a quadratic form chi^2 = dp^T*alpha*dp - 2*beta*dp + chisq,
         where dp is the *shift* from current parameter values.  Marginalization over
@@ -548,7 +549,8 @@ class PixelGrid(Model):
 
         return Star(star.data.setData(model,include_zero_weight=True), star.fit)
 
-    def reflux(self, star, fit_center=True, logger=None):
+    def reflux(self, star, fit_center=True, profile=None, logger=None):
+        # TODO: deal with profile here
         """Fit the Model to the star's data, varying only the flux (and
         center, if it is free).  Flux and center are updated in the Star's
         attributes.  This is a single-step solution if only solving for flux,

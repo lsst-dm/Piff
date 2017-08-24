@@ -108,7 +108,7 @@ class DECamInfo(object):
         return DECamInfo._infoDict
 
     def _getinfoArray(self, cut_ccds=[]):
-        vals = np.zeros((len(self.infoDict) + 30, 2))
+        vals = np.zeros((len(self.infoDict) + 1, 2)) - np.array([[-500, -500]])
         for key in self.infoDict:
             infoDict = self.infoDict[key]
             chipnum = infoDict['chipnum']

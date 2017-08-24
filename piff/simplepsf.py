@@ -93,7 +93,7 @@ class SimplePSF(PSF):
         return kwargs
 
     def fit(self, stars, wcs, pointing,
-            chisq_threshold=0.1, max_iterations=30, profiles=[], logger=None):
+            chisq_threshold=0.1, max_iterations=30, logger=None):
         """Fit interpolated PSF model to star data using standard sequence of operations.
 
         :param stars:           A list of Star instances.
@@ -103,7 +103,6 @@ class SimplePSF(PSF):
         :param chisq_threshold: Change in reduced chisq at which iteration will terminate.
                                 [default: 0.1]
         :param max_iterations:  Maximum number of iterations to try. [default: 30]
-        :param profiles:        List of Galsim profiles to convolve with model during fit. [default: []]
         :param logger:          A logger object for logging debug info. [default: None]
         """
         logger = galsim.config.LoggerWrapper(logger)
@@ -151,23 +150,12 @@ class SimplePSF(PSF):
                 logger.warning("Iteration %d: Fitting %d stars", iteration+1, len(self.stars))
 
             fit_fn = self.model.chisq if quadratic_chisq else self.model.fit
-            try:
-                len_profiles = len(profiles)
-            except TypeError:
-                # None has no length
-                len_profiles = 0
-            convolve_profiles = len_profiles and getattr(self.model, "getProfile", False)
-            if len_profiles and not getattr(self.model, "getProfile", False):
-                raise NotImplementedError("No getProfile function for {0}!".format(self.model))
 
             nremoved = 0
             new_stars = []
             for si, s in enumerate(self.stars):
                 try:
-                    if convolve_profiles:
-                        new_star = fit_fn(s, profile=profiles[si], logger=logger)
-                    else:
-                        new_star = fit_fn(s, logger=logger)
+                    new_star = fit_fn(s, logger=logger)
                 except (KeyboardInterrupt, SystemExit):
                     raise
                 except ModelFitError:
@@ -191,10 +179,7 @@ class SimplePSF(PSF):
                     s = s.addPoisson(signal)
 
                     try:
-                        if convolve_profiles:
-                            new_star = self.model.reflux(self.interp.interpolate(s),profile=profiles[si],logger=logger)
-                        else:
-                            new_star = self.model.reflux(self.interp.interpolate(s),logger=logger)
+                        new_star = self.model.reflux(self.interp.interpolate(s),logger=logger)
                     except (KeyboardInterrupt, SystemExit):
                         raise
                     except:
@@ -208,6 +193,7 @@ class SimplePSF(PSF):
             if self.outliers and (iteration > 0 or not self.interp.degenerate_points):
                 # Perform outlier rejection, but not on first iteration for degenerate solvers.
                 logger.debug("             Looking for outliers")
+                # self.stars, nremoved1 = self.outliers.removeOutliers(self.stars, logger=logger)
                 self.stars, nremoved1 = self.outliers.removeOutliers(self.stars, logger=logger)
                 if nremoved1 == 0:
                     logger.debug("             No outliers found")
@@ -263,6 +249,7 @@ class SimplePSF(PSF):
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
         # get the profile
+        # TODO: what to do when the model does not have a getProfile?
         prof = self.model.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
         return prof
 

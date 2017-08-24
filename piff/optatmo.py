@@ -127,15 +127,19 @@ class OptAtmoPSF(PSF):
         # extract profiles for AtmoPSF
         if logger:
             logger.info("Extracting OpticalWavefrontPSF profiles")
+        # TODO: add these profiles to the stars
         profiles = [self.optpsf.getProfile(star) for star in self.stars]
-        # try cleaning out starfits
+        # clean out starfits
         self.stars = [Star(star.data, None) for star in self.stars]
+        # now add the profiles
+        for star, profile in zip(self.stars, profiles):
+            star.data.properties['other_model'] = profile
 
         # fit AtmoPSF
         if logger:
             logger.info("Fitting AtmospherePSF")
         # TODO: want to make sure when we draw stars in atmopsf that we draw the same with self.drawStar
-        self.atmopsf.fit(self.stars, wcs, pointing, profiles=profiles, logger=logger)
+        self.atmopsf.fit(self.stars, wcs, pointing, logger=logger)
 
         # update stars from outlier rejection
         nremoved = len(self.stars) - len(self.atmopsf.stars)
@@ -160,6 +164,12 @@ class OptAtmoPSF(PSF):
             except:
                 if logger:
                     logger.warn("Unable to produce chisq?!")
+
+        # the job done, remove other_model from star properties
+        for stars in [self.stars, self.atmopsf.stars, self.optpsf.stars, self.optpsf._fit_stars]:
+            for star in stars:
+                if 'other_model' in star.data.properties:
+                    star.data.properties.pop('other_model')
 
     def getParams(self, star):
         """Get params for a given star.
@@ -538,14 +548,13 @@ class OpticalWavefrontPSF(PSF):
 
         return shapes
 
-    def _fit_init(self, stars, wcs, pointing, profiles=[], logger=None):
+    def _fit_init(self, stars, wcs, pointing, logger=None):
         """Sets up all the tasks you would need to start the fit. Useful for when you want to test PSF functionality but don't want to run the expensive fit.
 
         :param stars:           A list of Star instances.
         :param wcs:             A dict of WCS solutions indexed by chipnum.
         :param pointing:        A galsim.CelestialCoord object giving the telescope pointing.
                                 [Note: pointing should be None if the WCS is not a CelestialWCS]
-        :param profiles:        List of Galsim profiles to convolve with model during fit. [default: []]
         :param logger:          A logger object for logging debug info. [default: None]
         """
         if logger:
@@ -554,18 +563,11 @@ class OpticalWavefrontPSF(PSF):
         self.pointing = pointing
         self.stars = stars
 
-        # TODO: deal with convolve profiles in practice and using _fit_profiles
-        convolve_profiles = len(profiles) and getattr(self.model, "getProfile", False)
-
         self._fit_stars = stars
         choice = np.arange(len(stars))
         if self.kwargs['n_fit_stars'] and self.kwargs['n_fit_stars'] < len(self._fit_stars):
             choice = np.sort(np.random.choice(len(self._fit_stars), self.kwargs['n_fit_stars'], replace=False))
             self._fit_stars = [stars[i] for i in choice]
-            if convolve_profiles:
-                self._fit_profiles = [profiles[i] for i in choice]
-            else:
-                self._fit_profiles = None
             if logger:
                 logger.warning('Cutting from {0} to {1} stars'.format(len(self.stars), len(self._fit_stars)))
         # get the moments of the stars for comparison
@@ -583,10 +585,6 @@ class OpticalWavefrontPSF(PSF):
         self._shapes = self._shapes[indx]
         self._errors = self._errors[indx]
         self._fit_stars = [star for star, ind in zip(self._fit_stars, indx) if ind]
-        if convolve_profiles:
-            self._fit_profiles = [profile for profile, ind in zip(self._fit_profiles, indx) if ind]
-        else:
-            self._fit_profiles = None
         # make use_stars
         use_stars = np.in1d(np.arange(len(stars)), choice[indx], assume_unique=True)
 
@@ -609,17 +607,16 @@ class OpticalWavefrontPSF(PSF):
         self._logger = logger
 
     def fit(self, stars, wcs, pointing,
-            profiles=[], logger=None):
+            logger=None):
         """Fit interpolated PSF model to star data using standard sequence of operations.
 
         :param stars:           A list of Star instances.
         :param wcs:             A dict of WCS solutions indexed by chipnum.
         :param pointing:        A galsim.CelestialCoord object giving the telescope pointing.
                                 [Note: pointing should be None if the WCS is not a CelestialWCS]
-        :param profiles:        List of Galsim profiles to convolve with model during fit. [default: []]
         :param logger:          A logger object for logging debug info. [default: None]
         """
-        self._fit_init(stars, wcs, pointing, profiles=profiles, logger=logger)
+        self._fit_init(stars, wcs, pointing, logger=logger)
 
         if self.kwargs['fitter_algorithm'] == 'minuit':
             self._minuit_fit(logger=logger)
@@ -628,7 +625,7 @@ class OpticalWavefrontPSF(PSF):
         elif self.kwargs['fitter_algorithm'] == 'scipy':
             self._scipy_fit(logger=logger)
         else:
-            raise NotImplementedError('fitter {0} not yet implmented!'.format(self.kwargs['fitter_algorithm']))
+            raise NotImplementedError('fitter {0} not implemented!'.format(self.kwargs['fitter_algorithm']))
 
     def _stars_to_parameters(self, stars, logger=None):
         """Takes in stars and returns their zernikes, u, v, and focal x and focal y coordinates.
@@ -888,7 +885,7 @@ class OpticalWavefrontPSF(PSF):
                 val = self.fitter_kwargs[key]
                 p0.append(val)
                 if logger:
-                    logger.debug('{0}:\t{1:.2e}'.format(key, val))
+                    logger.debug('{0}:\t{1:+.2e}'.format(key, val))
 
         # minimize chi2
         if logger:
@@ -1371,7 +1368,7 @@ class OpticalWavefrontPSF(PSF):
             z09d, z09x, z09y,
             z10d, z10x, z10y,
             z11d, z11x, z11y,
-            self._logger)
+            logger=self._logger)
 
         return gradients
 

@@ -34,7 +34,7 @@ optical_templates = {
              # aaron plays between 19 mm thick and 50 mm thick
              'strut_thick': 0.050 * (1462.526 / 4010.) / 2.0, # conversion factor is nebulous?!
              'strut_angle': 45 * galsim.degrees,
-             'r0': 0.1,
+             # 'r0': 0.1,
            },
     # 'des_no_obscuration': {
     #          'nstruts': 4,
@@ -48,7 +48,7 @@ optical_templates = {
     'lsst': { 'obscuration': 0.61,
              'diam': 8.36,
              'lam': 700, # nm
-             'r0': 0.1,
+             # 'r0': 0.1,
            },
     # 'lsst_no_obscuration': {
     #          'diam': 8.36,
@@ -170,7 +170,7 @@ class Optical(Model):
         if required_keys_present > 1 and logger:
             logger.warning('Warning! We have too many kolmogorov kwargs. I think things may behave unexpectedly!')
         if required_keys_present == 0:
-            self.kolmogorov_kwargs = {}
+            self.kolmogorov_kwargs = {'r0': None}
         # Also, let r0=0 or None indicate that there is no kolmogorov component
         # if 'r0' in self.kolmogorov_kwargs and not self.kolmogorov_kwargs['r0']:
         #     self.kolmogorov_kwargs = {}
@@ -206,10 +206,20 @@ class Optical(Model):
 
         :returns: a new Star with the fitted parameters in star.fit
         """
+        import galsim
         image = star.image
         weight = star.weight
-        # make image from self.draw
-        model_image = self.draw(star).image
+
+        # check if star has other_model
+        if 'other_model' in star.data.properties:
+            # TODO: what do we do if the other_model is a pixel image like in pixel_grid?
+            prof = galsim.Convolve([self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux, star.data.properties['other_model']], gsparams=self.gsparams)
+            center = galsim.PositionD(*star.fit.center)
+            offset = star.data.image_pos + center - star.data.image.trueCenter()
+            model_image = prof.drawImage(star.data.image.copy(), method='auto', offset=offset)
+        else:
+            # make image from self.draw
+            model_image = self.draw(star).image
 
         # compute chisq
         chisq = np.std(image.array - model_image.array)
@@ -270,8 +280,7 @@ class Optical(Model):
         prof = self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
         center = galsim.PositionD(*star.fit.center)
         offset = star.data.image_pos + center - star.data.image.trueCenter()
-        # TODO: should method be 'auto', not 'no_pixel'?
-        image = prof.drawImage(star.data.image.copy(), method='no_pixel', offset=offset)
+        image = prof.drawImage(star.data.image.copy(), method='auto', offset=offset)
         # TODO: might need to update image pos?
         properties = star.data.properties.copy()
         for key in ['x', 'y', 'u', 'v']:

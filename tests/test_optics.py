@@ -86,9 +86,10 @@ def test_shearing():
     star = make_empty_star()
     g1 = 0
     g2 = 0.05
-    model = piff.Optical(r0=0.1, g1=g1, g2=g2, template='des')
+    model = piff.Optical(sigma=1, g1=g1, g2=g2, template='des')
     star = model.draw(star)
-    gaussian = piff.Gaussian(include_pixel=False)
+    # TODO: include_pixel=True?
+    gaussian = piff.Gaussian(include_pixel=True)
     star_gaussian = gaussian.fit(star)
     np.testing.assert_almost_equal(star_gaussian.fit.params[1], g1, 5)
     np.testing.assert_almost_equal(star_gaussian.fit.params[2], g2, 5)
@@ -96,19 +97,19 @@ def test_shearing():
 
 @timer
 def test_gaussian():
-    gaussian = piff.Gaussian(include_pixel=False)
+    gaussian = piff.Gaussian(include_pixel=True)
     star = make_empty_star()
     # test gaussian alone
     sigma = 1
     g1 = -0.1
     g2 = 0.05
-    model = piff.Optical(r0=0, sigma=sigma, template='des')
+    model = piff.Optical(sigma=sigma, template='des')
     star = model.draw(star)
     # insert assert statement about sigma
     np.testing.assert_almost_equal(gaussian.fit(star).fit.params[0], sigma, 5)
 
     # gaussian and shear
-    model = piff.Optical(r0=0, sigma=sigma, g1=g1, g2=g2, template='des')
+    model = piff.Optical(sigma=sigma, g1=g1, g2=g2, template='des')
     star = model.draw(star)
     params = gaussian.fit(star).fit.params
     np.testing.assert_almost_equal(params[0], sigma, 5)
@@ -117,7 +118,7 @@ def test_gaussian():
 
     # now gaussian, shear, aberration, r0
     star = make_empty_star(params=[0.5, 0.8, -0.7, 0.5, -0.2, 0.9, -1, 2.0])
-    model = piff.Optical(r0=0.1, sigma=sigma, g1=g1, g2=g2, template='des')
+    model = piff.Optical(sigma=sigma, g1=g1, g2=g2, template='des')
     star = model.draw(star)
 
 @timer
