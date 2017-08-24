@@ -664,10 +664,10 @@ class OpticalWavefrontPSF(PSF):
         r0 = vals[0]
         g1 = vals[1]
         g2 = vals[2]
-        ones = np.ones(len(zernikes)))[:, None]
+        ones = np.ones(len(zernikes))[:, None]
         misalignments = np.array(vals[3:])
         # stack r0
-        params = np.hstack(((r0 * ones, g1 * ones, g2 * ones, zernikes))
+        params = np.hstack((r0 * ones, g1 * ones, g2 * ones, zernikes))
 
         # apply misalignment
         misalignment_arr = misalignments.reshape(8, 3)
@@ -770,7 +770,7 @@ class OpticalWavefrontPSF(PSF):
              3.61e-03 * psq[65] + 4.83e-03 * psq[67] + -5.29e-05 * psq[70] +  \
              1.88e-04 * psq[74] + 2.66e-01 * psq[78] + 4.05e-02 * psq[102] +  \
              2.89e-02 * psq[122] + -8.41e-03 * psq[124] + 5.45e-02 * psq[126] +  \
-             8.14e-03 * psq[130] + 5.40e-02 * psq[132] + -4.66e-05 * psq[135] +  \
+             8.14e-03 * psq[130] + 5.40e-02 * psq[132] + -4.66e-05 * psq[135]
 
 
         """
