@@ -662,13 +662,16 @@ class OpticalWavefrontPSF(PSF):
         """Given zernikes, positions, and misalignment vector, misalign zernikes"""
 
         r0 = vals[0]
-        misalignments = np.array(vals[1:])
+        g1 = vals[1]
+        g2 = vals[2]
+        ones = np.ones(len(zernikes)))[:, None]
+        misalignments = np.array(vals[3:])
         # stack r0
-        params = np.hstack(((r0 * np.ones(len(zernikes)))[:, None], zernikes))
+        params = np.hstack(((r0 * ones, g1 * ones, g2 * ones, zernikes))
 
         # apply misalignment
         misalignment_arr = misalignments.reshape(8, 3)
-        params[:, 1:] = params[:, 1:] + misalignment_arr[:, 0] + fx[:, None] * misalignment_arr[:, 2] + fy[:, None] * misalignment_arr[:, 1]
+        params[:, 3:] = params[:, 3:] + misalignment_arr[:, 0] + fx[:, None] * misalignment_arr[:, 2] + fy[:, None] * misalignment_arr[:, 1]
         return params
 
     @staticmethod
@@ -683,20 +686,21 @@ class OpticalWavefrontPSF(PSF):
         params = params.copy()
         params[:, 0] = 1. / params[:, 0] ** 2
         params[:, 0] = params[:, 0] * 0.01
-        params[:, 1:] = params[:, 1:] * 2
+        params[:, 1:3] = params[:, 1:3] * 1.
+        params[:, 3:] = params[:, 3:] * 2
         psq = []
         pindx = []
 
-        param_names = ['r0'] + ['z{0:02d}'.format(i) for i in range(4, 12)]
+        param_names = ['r0', 'g1', 'g2'] + ['z{0:02d}'.format(i) for i in range(4, 12)]
         # only allow up to quadratic in zernike, but allow r0 to be quartic
-        for pi in range(9):
+        for pi in range(11):
             psq.append(params[:, pi])
             pindx.append([param_names[pi]])
-            for pj in range(pi, 9):
+            for pj in range(pi, 11):
                 psq.append(params[:, pi] * params[:, pj])
                 pindx.append([param_names[pi], param_names[pj]])
                 if pi == 0:
-                    for pk in range(pj, 9):
+                    for pk in range(pj, 11):
                         psq.append(params[:, pi] * params[:, pj] * params[:, pk])
                         pindx.append([param_names[pi], param_names[pj], param_names[pk]])
         psq = np.array(psq)
@@ -709,92 +713,98 @@ class OpticalWavefrontPSF(PSF):
 
         """
         e0 14 coeffs,
-        std lasso 1.35e-02 std full 1.18e-02
+        std lasso 1.43e-02 std full 1.24e-02
         [None, None]:    +0.00e+00
-        0 ['r0']:    +8.44e-01
-        1 ['r0', 'r0']:    -6.57e-03
-        2 ['r0', 'r0', 'r0']:    -9.20e-04
-        19 ['r0', 'z04', 'z11']:    +2.37e-02
-        54 ['r0', 'z11', 'z11']:    +2.39e-02
-        56 ['z04', 'z04']:    +3.24e-02
-        63 ['z04', 'z11']:    +2.06e-02
-        65 ['z05', 'z05']:    +1.85e-02
-        73 ['z06', 'z06']:    +1.88e-02
-        80 ['z07', 'z07']:    +4.32e-02
-        86 ['z08', 'z08']:    +4.32e-02
-        91 ['z09', 'z09']:    +3.61e-02
-        95 ['z10', 'z10']:    +3.68e-02
-        98 ['z11', 'z11']:    +8.04e-02
+        0 ['r0']:    +8.54e-01
+        1 ['r0', 'r0']:    -9.19e-03
+        2 ['r0', 'r0', 'r0']:    -5.60e-04
+        42 ['r0', 'z04', 'z11']:    +2.34e-02
+        77 ['r0', 'z11', 'z11']:    +1.98e-02
+        100 ['z04', 'z04']:    +3.64e-02
+        107 ['z04', 'z11']:    +2.43e-02
+        109 ['z05', 'z05']:    +2.32e-02
+        117 ['z06', 'z06']:    +2.25e-02
+        124 ['z07', 'z07']:    +4.72e-02
+        130 ['z08', 'z08']:    +4.78e-02
+        135 ['z09', 'z09']:    +4.01e-02
+        139 ['z10', 'z10']:    +3.95e-02
+        142 ['z11', 'z11']:    +8.96e-02
         """
 
-        e0 = 8.44e-01 * psq[0] + -6.57e-03 * psq[1] + -9.20e-04 * psq[2] + 2.37e-02 * psq[19] +  \
-             2.39e-02 * psq[54] + 3.24e-02 * psq[56] + 2.06e-02 * psq[63] +  \
-             1.85e-02 * psq[65] + 1.88e-02 * psq[73] +  \
-             4.32e-02 * psq[80] + 4.32e-02 * psq[86] + 3.61e-02 * psq[91] +  \
-             3.68e-02 * psq[95] + 8.04e-02 * psq[98]
+        e0 = 8.54e-01 * psq[0] + -9.19e-03 * psq[1] + -5.60e-04 * psq[2] + 2.34e-02 * psq[42] +  \
+             1.98e-02 * psq[77] + 3.64e-02 * psq[100] + 2.43e-02 * psq[107] +  \
+             2.32e-02 * psq[109] + 2.25e-02 * psq[117] +  \
+             4.72e-02 * psq[124] + 4.78e-02 * psq[130] + 4.01e-02 * psq[135] +  \
+             3.95e-02 * psq[139] + 8.96e-02 * psq[142]
 
         """
-        e1 19 coeffs,
-        std lasso 8.36e-03 std full 8.25e-03
+        e1 21 coeffs,
+        std lasso 9.12e-03 std full 8.68e-03
         [None, None]:    +0.00e+00
-        2 ['r0', 'r0', 'r0']:    +7.24e-06
-        4 ['r0', 'r0', 'z05']:    +8.39e-06
-        5 ['r0', 'r0', 'z06']:    -6.76e-06
-        14 ['r0', 'z04', 'z06']:    +2.56e-03
-        34 ['r0', 'z06', 'z11']:    +1.36e-02
-        36 ['r0', 'z07', 'z07']:    -3.16e-03
-        38 ['r0', 'z07', 'z09']:    +5.09e-03
-        42 ['r0', 'z08', 'z08']:    +2.72e-03
-        44 ['r0', 'z08', 'z10']:    +4.58e-03
-        55 ['z04']:    -3.08e-05
-        58 ['z04', 'z06']:    +3.98e-02
-        72 ['z06']:    +2.20e-05
-        78 ['z06', 'z11']:    +2.70e-02
-        80 ['z07', 'z07']:    -7.62e-03
-        82 ['z07', 'z09']:    +5.40e-02
-        85 ['z08']:    -1.04e-05
-        86 ['z08', 'z08']:    +8.60e-03
-        88 ['z08', 'z10']:    +5.46e-02
-        91 ['z09', 'z09']:    -5.76e-05
+        2 ['r0', 'r0', 'r0']:    -3.56e-06
+        3 ['r0', 'r0', 'g1']:    +5.43e-02
+        7 ['r0', 'r0', 'z06']:    +1.70e-06
+        11 ['r0', 'r0', 'z10']:    +2.23e-05
+        13 ['r0', 'g1']:    +1.45e+00
+        37 ['r0', 'z04', 'z06']:    +2.65e-03
+        57 ['r0', 'z06', 'z11']:    +1.28e-02
+        59 ['r0', 'z07', 'z07']:    -3.32e-03
+        61 ['r0', 'z07', 'z09']:    +4.68e-03
+        65 ['r0', 'z08', 'z08']:    +3.61e-03
+        67 ['r0', 'z08', 'z10']:    +4.83e-03
+        70 ['r0', 'z09', 'z09']:    -5.29e-05
+        74 ['r0', 'z10', 'z10']:    +1.88e-04
+        78 ['g1']:    +2.66e-01
+        102 ['z04', 'z06']:    +4.05e-02
+        122 ['z06', 'z11']:    +2.89e-02
+        124 ['z07', 'z07']:    -8.41e-03
+        126 ['z07', 'z09']:    +5.45e-02
+        130 ['z08', 'z08']:    +8.14e-03
+        132 ['z08', 'z10']:    +5.40e-02
+        135 ['z09', 'z09']:    -4.66e-05
         """
 
-        e1 = 7.24e-06 * psq[2] + 8.39e-06 * psq[4] + -6.76e-06 * psq[5] + 2.56e-03 * psq[14] +  \
-             1.36e-02 * psq[34] + -3.16e-03 * psq[36] + 5.09e-03 * psq[38] +  \
-             2.72e-03 * psq[42] + 4.58e-03 * psq[44] +  \
-             -3.08e-05 * psq[55] + 3.98e-02 * psq[58] + 2.20e-05 * psq[72] +  \
-             2.70e-02 * psq[78] + -7.62e-03 * psq[80] + 5.40e-02 * psq[82] +  \
-             -1.04e-05 * psq[85] + 8.60e-03 * psq[86] + 5.46e-02 * psq[88] +  \
-             -5.76e-05 * psq[91]
+        e1 = -3.56e-06 * psq[2] + 5.43e-02 * psq[3] + 1.70e-06 * psq[7] + 2.23e-05 * psq[11] +  \
+             1.45e+00 * psq[13] + 2.65e-03 * psq[37] + 1.28e-02 * psq[57] +  \
+             -3.32e-03 * psq[59] + 4.68e-03 * psq[61] +  \
+             3.61e-03 * psq[65] + 4.83e-03 * psq[67] + -5.29e-05 * psq[70] +  \
+             1.88e-04 * psq[74] + 2.66e-01 * psq[78] + 4.05e-02 * psq[102] +  \
+             2.89e-02 * psq[122] + -8.41e-03 * psq[124] + 5.45e-02 * psq[126] +  \
+             8.14e-03 * psq[130] + 5.40e-02 * psq[132] + -4.66e-05 * psq[135] +  \
+
 
         """
-        e2 17 coeffs,
-        std lasso 9.10e-03 std full 9.02e-03
+        e2 19 coeffs,
+        std lasso 9.75e-03 std full 9.34e-03
         [None, None]:    +0.00e+00
-        2 ['r0', 'r0', 'r0']:    +4.55e-06
-        4 ['r0', 'r0', 'z05']:    +7.57e-06
-        5 ['r0', 'r0', 'z06']:    +1.77e-05
-        8 ['r0', 'r0', 'z09']:    -6.87e-05
-        13 ['r0', 'z04', 'z05']:    +2.75e-03
-        27 ['r0', 'z05', 'z11']:    +1.28e-02
-        37 ['r0', 'z07', 'z08']:    +6.48e-03
-        39 ['r0', 'z07', 'z10']:    -4.96e-03
-        43 ['r0', 'z08', 'z09']:    +4.04e-03
-        57 ['z04', 'z05']:    +4.10e-02
-        65 ['z05', 'z05']:    +7.61e-05
-        71 ['z05', 'z11']:    +2.77e-02
-        81 ['z07', 'z08']:    +1.53e-02
-        83 ['z07', 'z10']:    -5.36e-02
-        87 ['z08', 'z09']:    +5.54e-02
-        92 ['z09', 'z10']:    +7.39e-05
-        97 ['z11']:    +4.23e-05
+        4 ['r0', 'r0', 'g2']:    +6.21e-02
+        8 ['r0', 'r0', 'z07']:    +8.52e-06
+        10 ['r0', 'r0', 'z09']:    +2.47e-05
+        12 ['r0', 'r0', 'z11']:    -5.61e-05
+        24 ['r0', 'g2']:    +1.44e+00
+        36 ['r0', 'z04', 'z05']:    +2.87e-03
+        50 ['r0', 'z05', 'z11']:    +1.21e-02
+        60 ['r0', 'z07', 'z08']:    +6.47e-03
+        62 ['r0', 'z07', 'z10']:    -4.48e-03
+        66 ['r0', 'z08', 'z09']:    +4.88e-03
+        71 ['r0', 'z09', 'z10']:    -1.28e-04
+        89 ['g2']:    +2.68e-01
+        101 ['z04', 'z05']:    +4.11e-02
+        115 ['z05', 'z11']:    +2.98e-02
+        125 ['z07', 'z08']:    +1.58e-02
+        127 ['z07', 'z10']:    -5.49e-02
+        131 ['z08', 'z09']:    +5.46e-02
+        136 ['z09', 'z10']:    +1.88e-04
+        141 ['z11']:    +6.51e-05
         """
 
-        e2 = 4.55e-06 * psq[2] + 7.57e-06 * psq[4] + 1.77e-05 * psq[5] + -6.87e-05 * psq[8] +  \
-             2.75e-03 * psq[13] + 1.28e-02 * psq[27] + 6.48e-03 * psq[37] +  \
-             -4.96e-03 * psq[39] + 4.04e-03 * psq[43] + 4.10e-02 * psq[57] +  \
-             7.61e-05 * psq[65] + 2.77e-02 * psq[71] +  \
-             1.53e-02 * psq[81] + -5.36e-02 * psq[83] + 5.54e-02 * psq[87] +  \
-             7.39e-05 * psq[92] + 4.23e-05 * psq[97]
+        e2 = 6.21e-02 * psq[4] + 8.52e-06 * psq[8] + 2.47e-05 * psq[10] + -5.61e-05 * psq[12] +  \
+             1.44e+00 * psq[24] + 2.87e-03 * psq[36] + 1.21e-02 * psq[50] +  \
+             6.47e-03 * psq[60] + -4.48e-03 * psq[62] +  \
+             4.88e-03 * psq[66] + -1.28e-04 * psq[71] + 2.68e-01 * psq[89] +  \
+             4.11e-02 * psq[101] + 2.98e-02 * psq[115] + 1.58e-02 * psq[125] +  \
+             -5.49e-02 * psq[127] + 5.46e-02 * psq[131] + 1.88e-04 * psq[136] +  \
+             6.51e-05 * psq[141]
 
         shapes = np.vstack((e0, e1, e2)).T
 
@@ -808,8 +818,6 @@ class OpticalWavefrontPSF(PSF):
         # get misalignment from fitter_kwargs
         vals = []
         for key in self.keys:
-            if key == 'g1' or key == 'g2':
-                continue
             vals.append(self.fitter_kwargs[key])
 
         # apply misalignments
@@ -837,8 +845,6 @@ class OpticalWavefrontPSF(PSF):
         vals = []
         key_i = 0
         for key in self.keys:
-            if key == 'g1' or key == 'g2':
-                continue
             if not self.fitter_kwargs['fix_' + key]:
                 vals.append(vals_in[key_i])
                 key_i += 1
@@ -879,8 +885,6 @@ class OpticalWavefrontPSF(PSF):
         if logger:
             logger.debug('Initial guess for analytic parameters:')
         for key in self.keys:
-            if key == 'g1' or key == 'g2':
-                continue
             if not self.fitter_kwargs['fix_' + key]:
                 val = self.fitter_kwargs[key]
                 p0.append(val)
@@ -899,8 +903,6 @@ class OpticalWavefrontPSF(PSF):
             logger.info('Analytic guess parameters:')
         key_i = 0
         for key in self.keys:
-            if key == 'g1' or key == 'g2':
-                continue
             if not self.fitter_kwargs['fix_' + key]:
                 val = res.x[key_i]
                 key_i += 1
