@@ -34,7 +34,7 @@ optical_templates = {
              # aaron plays between 19 mm thick and 50 mm thick
              'strut_thick': 0.050 * (1462.526 / 4010.) / 2.0, # conversion factor is nebulous?!
              'strut_angle': 45 * galsim.degrees,
-             # 'r0': 0.1,
+             'r0': 0.1,
            },
     # 'des_no_obscuration': {
     #          'nstruts': 4,
@@ -48,7 +48,7 @@ optical_templates = {
     'lsst': { 'obscuration': 0.61,
              'diam': 8.36,
              'lam': 700, # nm
-             # 'r0': 0.1,
+             'r0': 0.1,
            },
     # 'lsst_no_obscuration': {
     #          'diam': 8.36,
