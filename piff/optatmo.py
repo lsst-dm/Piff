@@ -604,6 +604,12 @@ class OpticalWavefrontPSF(PSF):
                 logger.info('Starting analytic guesswork for fit.')
             self._analytic_fit(logger)
 
+        # make sure stars have focal_x and focal_y
+        zernikes, u, v, fx, fy = self._stars_to_parameters(self._fit_stars, logger=logger)
+        for star, fxi, fyi in zip(stars, fx, fy):
+            star.data.properties['focal_x'] = fx
+            star.data.properties['focal_y'] = fy
+
         self._logger = logger
 
     def fit(self, stars, wcs, pointing,
@@ -894,7 +900,7 @@ class OpticalWavefrontPSF(PSF):
         # minimize chi2
         if logger:
             logger.info('Starting analytic guess. Initial chi2 = {0:.2e}'.format(self._analytic_chi2(p0)))
-        res = minimize(self._analytic_chi2, p0, args=(None, logger,))
+        res = minimize(self._analytic_chi2, p0, args=(None, logger,), options={'maxiter': 1000})
         if logger:
             logger.warn('Analytic finished. Final chi2 = {0:.2e}'.format(self._analytic_chi2(res.x)))
 
@@ -1046,11 +1052,8 @@ class OpticalWavefrontPSF(PSF):
         # update psf params
         self.update_psf_params(logger=logger, **params)
         # get chi (not chi2s!)
-        reduced_chi2, dof, chi2, indx, chi_l = self.chi2(self._fit_stars, full=True, logger=logger)
+        reduced_chi2, dof, chi2, indx, chi_l, chi_flat = self.chi2(self._fit_stars, full=True, logger=logger)
 
-        # chi_l is shaped (Nstar, Nshapes)
-        # using indx, remove Nans, and multiply by sqrt(weight) since usually weight * chi2
-        chi_flat = (np.sqrt(self.weights[None]) * chi_l[indx]).flatten()
         return chi_flat
 
     def _lmfit_fit(self, logger=None):
@@ -1186,6 +1189,9 @@ class OpticalWavefrontPSF(PSF):
         chi2 = np.sum(chi2_l[indx], axis=0)
         dof = sum(indx)
         reduced_chi2 = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
+        # chi_l is shaped (Nstar, Nshapes)
+        # using indx, remove Nans, and multiply by sqrt(weight) since usually weight * chi2
+        chi_flat = (np.sqrt(self.weights[None]) * chi_l[indx]).flatten()
 
         if logger:
             if sum(indx) != len(indx):
@@ -1222,8 +1228,10 @@ class OpticalWavefrontPSF(PSF):
         self._n_iter += 1
 
         if full:
-            return reduced_chi2, dof, chi2, indx, chi_l
+            return reduced_chi2, dof, chi2, indx, chi_l, chi_flat
         else:
+            # try returning chi_flat
+            # return chi_flat
             return reduced_chi2
 
     # TODO: stars, logger, option for doing all, fix, step_sizes, keys
@@ -1305,7 +1313,7 @@ class OpticalWavefrontPSF(PSF):
 
                     # update psf
                     self.update_psf_params(**params)
-                    reduced_chi2, dof, chi2, indx, chi2_l = self.chi2(self._fit_stars, full=True)
+                    reduced_chi2, dof, chi2, indx, chi2_l, chi_flat = self.chi2(self._fit_stars, full=True)
                     # discount these calls for the purposes of displaying _n_iter
                     self._n_iter -= 1
 
