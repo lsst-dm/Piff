@@ -25,6 +25,7 @@ from .model import Model, ModelFitError
 from .interp import Interp
 from .outliers import Outliers
 from .psf import PSF
+from .gmm import EMGMM
 
 class SimplePSF(PSF):
     """A PSF class that uses a single model and interpolator.
@@ -249,8 +250,15 @@ class SimplePSF(PSF):
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
         # get the profile
-        # TODO: what to do when the model does not have a getProfile?
-        prof = self.model.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        try:
+            prof = self.model.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        except AttributeError:
+            # no getProfile function, so fit a GMM to it
+            # draw the star
+            star_model = self.drawStar(star)
+            # fit the profile
+            # TODO: not sure how many is necessary
+            prof = EMGMM(star_model, n_gaussian=5, maxiter=1000, tol=1e-4)
         return prof
 
     def getParams(self, star):
