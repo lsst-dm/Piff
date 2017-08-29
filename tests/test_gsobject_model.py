@@ -226,6 +226,119 @@ def test_center():
         np.testing.assert_almost_equal(star2.image.array[mask]/peak, s.image.array[mask]/peak,
                                        decimal=14)
 
+@timer
+def test_convolution():
+    """Convolution of two gaussians is another gaussian. Test that this is the case.
+    """
+    # gaussian parameters [sigma, g1, g2]
+    p1 = [0.5, 0.02, 0.02]
+    p2 = [0.75, 0.01, -0.02]
+
+    # make the models
+    pix_scale = 0.263
+    model = piff.Gaussian(include_pixel=False)
+
+    star1 = piff.Star.makeTarget(u=0, v=0, scale=pix_scale)
+    star1.fit = star1.fit.newParams(p1)
+    star1 = model.draw(star1)
+
+    star2 = piff.Star.makeTarget(u=0, v=0, scale=pix_scale)
+    star2.fit = star2.fit.newParams(p2)
+    star2 = model.draw(star2)
+
+    # assign 'other_model' to each other
+    star1.data.properties['other_model'] = model.getProfile(star2.fit.params).shift(star2.fit.center) * star2.fit.flux
+    star2.data.properties['other_model'] = model.getProfile(star1.fit.params).shift(star1.fit.center) * star1.fit.flux
+
+    # redraw star1 and star2 with the convolutions
+    stars = []
+    for star in [star1, star2]:
+        prof = model.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        prof = galsim.Convolve([star.data.properties['other_model'], prof])
+        image = star.image.copy()
+        prof.drawImage(image, method=model._method, offset=(star.image_pos-image.trueCenter()))
+        data = piff.StarData(image, star.image_pos, star.weight, star.data.pointing, properties=star.data.properties, _xyuv_set=True)
+        star = piff.Star(data, star.fit)
+        stars.append(star)
+    star1, star2 = stars
+    star1_alone = star1.copy()
+    star1_alone.data.properties.pop('other_model')
+    star2_alone = star2.copy()
+    star2_alone.data.properties.pop('other_model')
+
+    # figure out what the convolved parameter would be
+    e0s = []
+    e1unnorms = []
+    e2unnorms = []
+    for sigma, g1, g2 in [p1, p2]:
+        # convert g to normalized e
+        shear = galsim.Shear(g1=g1, g2=g2)
+        e1norm = shear.getE1()
+        e2norm = shear.getE2()
+        # convert sigma to e0
+        e0 = np.sqrt(4 * sigma ** 4 / (1. - e1norm ** 2 - e2norm ** 2))
+        e0s.append(e0)
+        # un normalize normalized e so that we can add them together
+        e1unnorms.append(e0 * e1norm)
+        e2unnorms.append(e0 * e2norm)
+    # these can then be added together
+    e0_added = sum(e0s)
+    e1_added = sum(e1unnorms) / e0_added
+    e2_added = sum(e2unnorms) / e0_added
+    # convert to sigma, g1, g2
+    shear = galsim.Shear(e1=e1_added, e2=e2_added)
+    g1_added = shear.getG1()
+    g2_added = shear.getG2()
+    sigma_added = np.sqrt(np.sqrt(0.25 * e0_added ** 2 * (1 - e1_added ** 2 - e2_added ** 2)))
+
+    # fit
+    star1_fastfit = model.fit(star1.copy(), fastfit=False)
+    star1_fit = model.fit(star1.copy(), fastfit=True)
+    star2_fastfit = model.fit(star2.copy(), fastfit=False)
+    star2_fit = model.fit(star2.copy(), fastfit=True)
+    star1_alone_fastfit = model.fit(star1_alone.copy(), fastfit=False)
+    star1_alone_fit = model.fit(star1_alone.copy(), fastfit=True)
+    star2_alone_fastfit = model.fit(star2_alone.copy(), fastfit=False)
+    star2_alone_fit = model.fit(star2_alone.copy(), fastfit=True)
+
+    p3 = [sigma_added, g1_added, g2_added]
+    star3 = piff.Star.makeTarget(u=0, v=0, scale=pix_scale)
+    star3.fit = star3.fit.newParams(p3)
+    star3 = model.draw(star3)
+    star3_fastfit = model.fit(star3.copy(), fastfit=False)
+    star3_fit = model.fit(star3.copy(), fastfit=True)
+
+    # print('{0:+.4e}, {1:+.4e}, {2:+.4e}\n'.format(*p3))
+    # for stars in [[star1, star1_fit, star1_fastfit],
+    #               [star2, star2_fit, star2_fastfit],
+    #               [star1_alone, star1_alone_fit, star1_alone_fastfit],
+    #               [star2_alone, star2_alone_fit, star2_alone_fastfit],
+    #               [star3, star3_fit, star3_fastfit],
+    #               ]:
+    #     for star in stars:
+    #         print('{0:+.4e}, {1:+.4e}, {2:+.4e}'.format(*star.fit.params))
+    #     print('')
+
+    # check fits
+    # make sure convolution works
+    # _alone_ should match star3
+    rtol = 1e-8
+    atol = 1e-4
+    np.testing.assert_allclose(star3.fit.params, star3_fit.fit.params, rtol=rtol, atol=atol)
+    np.testing.assert_allclose(star3.fit.params, star3_fastfit.fit.params, rtol=rtol, atol=atol)
+    np.testing.assert_allclose(star3.fit.params, star1_alone_fit.fit.params, rtol=rtol, atol=atol)
+    np.testing.assert_allclose(star3.fit.params, star1_alone_fastfit.fit.params, rtol=rtol, atol=atol)
+    np.testing.assert_allclose(star3.fit.params, star2_alone_fit.fit.params, rtol=rtol, atol=atol)
+    np.testing.assert_allclose(star3.fit.params, star2_alone_fastfit.fit.params, rtol=rtol, atol=atol)
+
+    # make sure other_model works
+    # star1 and star2 should equal their _fit, _fastfit
+    rtol = 1e-8
+    np.testing.assert_allclose(star1.fit.params, star1_fit.fit.params)
+    np.testing.assert_allclose(star1.fit.params, star1_fastfit.fit.params)
+    np.testing.assert_allclose(star2.fit.params, star2_fit.fit.params)
+    np.testing.assert_allclose(star2.fit.params, star2_fastfit.fit.params)
+
 
 @timer
 def test_interp():
@@ -685,3 +798,4 @@ if __name__ == '__main__':
     test_gradient_center()
     test_direct()
     test_error()
+    test_convolution()

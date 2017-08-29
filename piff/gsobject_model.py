@@ -71,7 +71,7 @@ class GSObjectModel(Model):
             prof = galsim.Convolve([self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux, star.data.properties['other_model']])
             center = galsim.PositionD(*star.fit.center)
             offset = star.data.image_pos + center - star.data.image.trueCenter()
-            model_image = prof.drawImage(star.data.image.copy(), method='auto', offset=offset)
+            model_image = prof.drawImage(star.data.image.copy(), method=self._method, offset=offset)
             # put model_image in a star
             properties = star.data.properties.copy()
             for key in ['x', 'y', 'u', 'v']:
