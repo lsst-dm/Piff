@@ -1214,7 +1214,7 @@ class OpticalWavefrontPSF(PSF):
                     '* size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(
                         self.model.kwargs['r0'], self.model.g1, self.model.g2),]
             for i in range(0, 8):
-                log.append('* z{0:02d}   |\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(
+                log.append('* z{0:02d}   |\t {1:+.3e} \t|\t {2:+.3e} \t|\t {3:+.3e}   *\n'.format(
                     i + 4, self.interp.misalignment[i][0], self.interp.misalignment[i][1],
                     self.interp.misalignment[i][2]))
             log += [
