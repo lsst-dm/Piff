@@ -84,6 +84,7 @@ from .polynomial_interp import Polynomial, polynomial_types
 from .basis_interp import BasisInterp, BasisPolynomial
 from .knn_interp import kNNInterp
 from .gp_interp import GPInterp, ExplicitKernel, AnisotropicRBF, FunctionKernel
+from .gp_george_interp import GPGeorgeInterp
 from .gp_corr import EmpiricalGPInterp
 
 # Outlier handlers are named BlahOutliers where Blah is what they are called in teh config file
