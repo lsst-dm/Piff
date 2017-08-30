@@ -25,7 +25,7 @@ from .model import Model, ModelFitError
 from .interp import Interp
 from .outliers import Outliers
 from .psf import PSF
-from .gmm import EMGMM
+from .gmm import GaussianMixtureModel
 
 class SimplePSF(PSF):
     """A PSF class that uses a single model and interpolator.
@@ -239,7 +239,7 @@ class SimplePSF(PSF):
         """
         return [self.drawStar(star) for star in stars]
 
-    def getProfile(self, star):
+    def getProfile(self, star, **gmm_kwargs):
         """Get galsim profile for a given star.
 
         :param star:        Star instance holding information needed for interpolation as
@@ -257,8 +257,9 @@ class SimplePSF(PSF):
             # draw the star
             star_model = self.drawStar(star)
             # fit the profile
-            # TODO: not sure how many is necessary
-            prof = EMGMM(star_model, n_gaussian=5, maxiter=1000, tol=1e-4)
+            model = GaussianMixtureModel(**gmm_kwargs)
+            star_gmm = model.fit(star_model)
+            prof = model.getProfile(star_gmm)
         return prof
 
     def getParams(self, star):

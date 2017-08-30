@@ -76,6 +76,7 @@ from .config import piffify, setup_logger, read_config
 from .model import Model, ModelFitError
 from .pixelgrid import PixelGrid, Lanczos, Bilinear
 from .gsobject_model import GSObjectModel, Gaussian, Kolmogorov, Moffat
+from .gmm import GaussianMixtureModel
 
 # Interpolators -- Class names here match what they are called in the config file
 from .interp import Interp
@@ -111,4 +112,3 @@ from .optical_model import Optical, optical_templates
 # Leave these in their own namespaces
 from . import util
 from . import des
-from . import gmm
