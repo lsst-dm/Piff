@@ -950,9 +950,9 @@ class OpticalWavefrontPSF(PSF):
         self.update_psf_params(logger=logger, **params)
 
         # get chi2
-        reduced_chi2 = self.chi2(self._fit_stars, logger=logger)
+        unreduced_chi2 = self.chi2(self._fit_stars, logger=logger)
 
-        return reduced_chi2
+        return unreduced_chi2
 
     def _scipy_fit(self, logger=None):
         # TODO: add max_iterations
@@ -1053,7 +1053,7 @@ class OpticalWavefrontPSF(PSF):
         # update psf params
         self.update_psf_params(logger=logger, **params)
         # get chi (not chi2s!)
-        reduced_chi2, dof, chi2, indx, chi_l, chi_flat = self.chi2(self._fit_stars, full=True, logger=logger)
+        unreduced_chi2, dof, chi2, indx, chi_l, chi_flat = self.chi2(self._fit_stars, full=True, logger=logger)
 
         return chi_flat
 
@@ -1189,7 +1189,8 @@ class OpticalWavefrontPSF(PSF):
         indx = ~np.any(chi2_l != chi2_l, axis=1)
         chi2 = np.sum(chi2_l[indx], axis=0)
         dof = sum(indx)
-        reduced_chi2 = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
+        # reduced_chi2 = np.sum(self.weights * chi2) * 1. / dof / np.sum(self.weights)
+        unreduced_chi2 = np.sum(self.weights * chi2) * 1. / np.sum(self.weights)
         # chi_l is shaped (Nstar, Nshapes)
         # using indx, remove Nans, and multiply by sqrt(weight) since usually weight * chi2
         chi_flat = (np.sqrt(self.weights[None]) * chi_l[indx]).flatten()
@@ -1198,7 +1199,7 @@ class OpticalWavefrontPSF(PSF):
             if sum(indx) != len(indx):
                 logger.info('Warning! We are using {0} stars out of {1} stars'.format(sum(indx), len(indx)))
             logger.debug('chi2 array:')
-            logger.debug('chi2 summed: {0}'.format(reduced_chi2))
+            logger.debug('chi2 summed: {0}'.format(unreduced_chi2))
             logger.debug('chi2 in each shape: {0}'.format(chi2))
             logger.debug('chi2 with weights: {0}'.format(self.weights * chi2))
             logger.debug('sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
@@ -1229,11 +1230,11 @@ class OpticalWavefrontPSF(PSF):
         self._n_iter += 1
 
         if full:
-            return reduced_chi2, dof, chi2, indx, chi_l, chi_flat
+            return unreduced_chi2, dof, chi2, indx, chi_l, chi_flat
         else:
             # try returning chi_flat
             # return chi_flat
-            return reduced_chi2
+            return unreduced_chi2
 
     # TODO: stars, logger, option for doing all, fix, step_sizes, keys
     # would be nice to make this a static function
@@ -1316,7 +1317,7 @@ class OpticalWavefrontPSF(PSF):
 
                     # update psf
                     self.update_psf_params(**params)
-                    reduced_chi2, dof, chi2, indx, chi2_l, chi_flat = self.chi2(stars, full=True)
+                    unreduced_chi2, dof, chi2, indx, chi2_l, chi_flat = self.chi2(stars, full=True)
                     # discount these calls for the purposes of displaying _n_iter
                     self._n_iter -= 1
 
@@ -1333,7 +1334,8 @@ class OpticalWavefrontPSF(PSF):
         gradients_l = np.array(gradients_l)
         # convert gradients_l into gradients
         # recall that reduced_chi2 = np.sum(self.weights * np.sum(chi2_l[indx], axis=0)) * 1. / sum(indx) / np.sum(self.weights)
-        gradients = np.sum(self.weights[None] * np.nansum(gradients_l, axis=1), axis=1) * 1. / len(stars) / np.sum(self.weights)
+        # reduced_gradients = np.sum(self.weights[None] * np.nansum(gradients_l, axis=1), axis=1) * 1. / len(stars) / np.sum(self.weights)
+        gradients = np.sum(self.weights[None] * np.nansum(gradients_l, axis=1), axis=1) * 1. / np.sum(self.weights)
 
         # print gradient log info
         if logger:
@@ -1413,9 +1415,9 @@ class OpticalWavefrontPSF(PSF):
         # update psf params
         self.update_psf_params(logger=self._logger, **params)
 
-        reduced_chi2 = self.chi2(self._fit_stars, logger=self._logger)
+        unreduced_chi2 = self.chi2(self._fit_stars, logger=self._logger)
 
-        return reduced_chi2
+        return unreduced_chi2
 
     def drawStarList(self, stars):
         """Generate PSF images for given stars.
