@@ -383,6 +383,8 @@ class OpticalWavefrontPSF(PSF):
             pass
         elif self.kwargs['fitter_algorithm'] == 'scipy':
             pass
+        elif self.kwargs['fitter_algorithm'] == 'emcee':
+            pass
         else:
             raise NotImplementedError('fitter {0} not implemented.'.format(self.kwargs['fitter_algorithm']))
 
@@ -631,8 +633,13 @@ class OpticalWavefrontPSF(PSF):
             self._lmfit_fit(logger=logger)
         elif self.kwargs['fitter_algorithm'] == 'scipy':
             self._scipy_fit(logger=logger)
+        elif self.kwargs['fitter_algorithm'] == 'emcee':
+            self._emcee_fit(logger=logger)
         else:
             raise NotImplementedError('fitter {0} not implemented!'.format(self.kwargs['fitter_algorithm']))
+
+        # update fit parameters based on fitter_kwargs
+        self.update_psf_params(logger=logger, **self.fitter_kwargs)
 
     def _stars_to_parameters(self, stars, logger=None):
         """Takes in stars and returns their zernikes, u, v, and focal x and focal y coordinates.
@@ -935,7 +942,6 @@ class OpticalWavefrontPSF(PSF):
         return gradients
 
     def _scipy_chi2(self, vals, logger=None):
-
         # update fitter_kwargs with vals
         key_i = 0
         params = {}
@@ -955,7 +961,6 @@ class OpticalWavefrontPSF(PSF):
         return unreduced_chi2
 
     def _scipy_fit(self, logger=None):
-        # TODO: add max_iterations
         """Fit interpolated PSF model to star data using minimize from scipy
 
         :param logger:          A logger object for logging debug info. [default: None]
@@ -997,13 +1002,8 @@ class OpticalWavefrontPSF(PSF):
                 self.fitter_kwargs[key] = val
                 if logger:
                     logger.info('{0}:\t{1:.2e}'.format(key, val))
-
                 # TODO: try putting in errors based on jacobian?
-
                 key_i += 1
-
-        # update fit parameters based on fitter_kwargs
-        self.update_psf_params(logger=logger, **self.fitter_kwargs)
 
     def _minuit_fit(self, logger=None):
         """Fit interpolated PSF model to star data using iminuit implementation of Minuit
@@ -1037,8 +1037,6 @@ class OpticalWavefrontPSF(PSF):
                         err = self.fitter_kwargs['error_' + key]
                         logstring = '{0}:\t{1:+.2e}\t{2:+.2e}'.format(key, val, err)
                         logger.info(logstring)
-            # update fit parameters based on fitter_kwargs
-            self.update_psf_params(logger=logger, **self.fitter_kwargs)
         else:
             if logger:
                 logger.info('User specified {0} steps, so moving on without running migrad'.format(self.kwargs['max_iterations']))
@@ -1103,6 +1101,124 @@ class OpticalWavefrontPSF(PSF):
 
                 key_i += 1
 
+    def _emcee_lnprob(self, vals, logger=None):
+        # update fitter_kwargs with vals
+        key_i = 0
+        params = {}
+        for key in self.keys:
+            if not self.fitter_kwargs['fix_' + key]:
+                val = vals[key_i]
+                # check limit / rotation
+                if 'limit_' + key in self.fitter_kwargs:
+                    lim = self.fitter_kwargs['limit_' + key]
+                    if val < lim[0] or val > lim[1]:
+                        return -np.inf
+                params[key] = val
+                key_i += 1
+
+        # keep track in fitter_kwargs
+        self.fitter_kwargs.update(params)
+        # update psf params
+        self.update_psf_params(logger=logger, **params)
+
+        # get chi2
+        unreduced_chi2 = self.chi2(self._fit_stars, logger=logger)
+
+        return -0.5 * unreduced_chi2
+
+    def _emcee_fit(self, logger=None):
+        """Fit interpolated PSF model to star data using emcee
+
+        :param logger:          A logger object for logging debug info. [default: None]
+        """
+        import emcee
+        if logger:
+            logger.info("Start fitting Optical fit using emcee")
+
+        # nburnin, nrun
+        ntotal = self.kwargs['max_iterations']
+        # do 20% burn in
+        nburnin = int(0.2 * ntotal)
+        nrun = ntotal - nburnin
+
+        # determine nparams
+        x0 = []
+        bounds = []
+        errors = []
+        for key in self.keys:
+            if not self.fitter_kwargs['fix_' + key]:
+                val = self.fitter_kwargs[key]
+                x0.append(val)
+                if 'limit_' + key in self.fitter_kwargs:
+                    bounds.append(self.fitter_kwargs['limit_' + key])
+                else:
+                    bounds.append((None, None))
+                errors.append(self.fitter_kwargs['error_' + key])
+
+        # nwalkers is whatever 2**n is bigger than 2*nparams
+        # 2 ** n-1 = nparams. n-1 log(2) = log(nparams)
+        # so n = int(roundup(log(nparams) / log(2) + 1))
+        nparams = len(x0)
+        nwalkers = 2 ** (int(np.ceil(np.log(nparams) / np.log(2) + 1)))
+
+        # determine p0 (nwalkers, nparams)
+        p0 = []
+        # do (nparams, nwalkers).T
+        for x0i, boundi, erri in zip(x0, bounds, errors):
+            p0i = np.random.normal(loc=x0i, scale=erri, size=nwalkers)
+            # cut all p outside limits to boundary
+            # WARNING: if bound is 0, doesn't this do bad?
+            if boundi[0]:
+                p0i = np.where(p0i < boundi[0], boundi[0], p0i)
+            if boundi[1]:
+                p0i = np.where(p0i > boundi[1], boundi[1], p0i)
+            # append
+            p0.append(p0i)
+        # put into (nwalkers, nparams)
+        p0 = np.array(p0).T
+        if logger:
+            logger.debug('Starting guesses for emcee Optical fit:')
+            for key, p0i in zip(self.keys, p0.T):
+                string = '{0}: '.format(key)
+                for p0ij in p0i:
+                    string += '{0:+.02e}, '.format(p0ij)
+                string = string[:-2]
+                logger.debug(string)
+
+        self._sampler = emcee.EnsembleSampler(nwalkers, nparams, self._emcee_lnprob, live_dangerously=True, kwargs={'logger': logger})
+
+        # burn
+        if logger:
+            logger.info("Start burnin of {0} steps for emcee fit of Optical".format(nburnin))
+        stuff = self._sampler.run_mcmc(p0, nburnin)
+        pos = stuff[0]
+
+        # steps
+        self._sampler.reset()
+        if logger:
+            logger.info("Start walking {0} steps for emcee fit of Optical".format(nrun))
+        stuff = self._sampler.run_mcmc(pos, nrun)
+
+        # interpret results
+        percent = 34
+        # fit, error
+        vals = np.array(map(lambda v: (v[1], 0.5 * (v[2] - v[0])),
+            zip(*np.percentile(self._sampler.flatchain,
+                               [50 - percent, 50, 50 + percent], axis=0))))
+        # update everything
+        if logger:
+            logger.info('Optical fit from emcee parameters:')
+        key_i = 0
+        for key in self.keys:
+            if not self.fitter_kwargs['fix_' + key]:
+                val, err = vals[key_i]
+                self.fitter_kwargs[key] = val
+                self.fitter_kwargs['error_' + key] = err
+                if logger:
+                    logstring = '{0}:\t{1:+.2e}'.format(key, val)
+                    logstring += '\t{0:.2e}'.format(err)
+                    logger.info(logstring)
+                key_i += 1
 
 
     def _update_psf_params(self, **kwargs):
