@@ -1176,14 +1176,18 @@ class OpticalWavefrontPSF(PSF):
             p0.append(p0i)
         # put into (nwalkers, nparams)
         p0 = np.array(p0).T
+        key_i = 0
         if logger:
             logger.debug('Starting guesses for emcee Optical fit:')
-            for key, p0i in zip(self.keys, p0.T):
-                string = '{0}: '.format(key)
-                for p0ij in p0i:
-                    string += '{0:+.02e}, '.format(p0ij)
-                string = string[:-2]
-                logger.debug(string)
+            for key in self.keys:
+                if not self.fitter_kwargs['fix_' + key]:
+                    string = '{0}: '.format(key)
+                    p0i = p0.T[key_i]
+                    for p0ij in p0i:
+                        string += '{0:+.02e}, '.format(p0ij)
+                    string = string[:-2]
+                    logger.debug(string)
+                    key_i += 1
 
         self._sampler = emcee.EnsembleSampler(nwalkers, nparams, self._emcee_lnprob, live_dangerously=True, kwargs={'logger': logger})
 
@@ -1265,28 +1269,47 @@ class OpticalWavefrontPSF(PSF):
         self.interp.misalignment = misalignment
 
         if logger:
-            misalignment_print = np.array([
-                      [r0, g1, g2],
-                      [z04d, z04x, z04y],
-                      [z05d, z05x, z05y],
-                      [z06d, z06x, z06y],
-                      [z07d, z07x, z07y],
-                      [z08d, z08x, z08y],
-                      [z09d, z09x, z09y],
-                      [z10d, z10x, z10y],
-                      [z11d, z11x, z11y],
-                      ])
-            misalignment_print = np.where(misalignment_print == misalignment_print, misalignment_print, 0)
-            try:
-                old_misalignment_print = np.vstack((
-                    np.array([[old_r0, old_g1, old_g2]]),
-                    old_misalignment))
-                old_misalignment_print = np.where(old_misalignment_print == old_misalignment_print, old_misalignment_print, 0)
-                logger.debug('New - Old misalignment is \n{0}'.format(misalignment_print - old_misalignment_print))
-                logger.debug('New misalignment is \n{0}'.format(misalignment_print))
-            except:
-                # old misalignment could be None on first iteration
-                logger.debug('New misalignment is \n{0}'.format(misalignment_print))
+            log = ['\n',
+                    '*******************************************************************************\n',
+                    '* time \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
+                    '*******************************************************************************\n',
+                    '*  \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
+                    '*******************************************************************************\n',]
+            # deal with size
+            empty_str = '    -    '
+            format_str = '{0:+.3e}'
+
+            str_list = [format_str.format(val)
+                         for val in [self.model.kwargs['r0'], self.model.g1, self.model.g2]]
+            string = '*  size\t|\t {0} \t|\t {1} \t|\t {2}   *\n'.format(*str_list)
+            log.append(string)
+
+            str_list = [[empty_str, format_str.format(val - old_val)][val == val and val - old_val != 0]
+                         for val, old_val in zip(
+                             [r0, g1, g2],
+                             [old_r0, old_g1, old_g2]
+                             )]
+            string = '* dsize\t|\t {0} \t|\t {1} \t|\t {2}   *\n'.format(*str_list)
+            log.append(string)
+
+            for i in range(0, 8):
+                str_list = [format_str.format(val)
+                             for val in [vali for vali in self.interp.misalignment[i]]]
+                string = '*  z{0:02d}\t|\t {1} \t|\t {2} \t|\t {3}   *\n'.format(i + 4, *str_list)
+                log.append(string)
+                str_list = [[empty_str, format_str.format(val - old_val)][val == val and val - old_val != 0]
+                             for val, old_val in zip(
+                             [vali for vali in misalignment[i]],
+                             [vali for vali in old_misalignment[i]]
+                                 )]
+                string = '* dz{0:02d}\t|\t {1} \t|\t {2} \t|\t {3}   *\n'.format(i + 4, *str_list)
+                log.append(string)
+
+            log.append('*******************************************************************************\n')
+            if self._n_iter % 50 == 0:
+                logger.info(''.join(log))
+            else:
+                logger.debug(''.join(log))
 
     def chi2(self, stars=None, full=False, logger=None):
         if not stars:
@@ -1312,29 +1335,7 @@ class OpticalWavefrontPSF(PSF):
         chi_flat = (np.sqrt(self.weights[None]) * chi_l[indx]).flatten()
 
         if logger:
-            if sum(indx) != len(indx):
-                logger.info('Warning! We are using {0} stars out of {1} stars'.format(sum(indx), len(indx)))
-            logger.debug('chi2 array:')
-            logger.debug('chi2 summed: {0}'.format(unreduced_chi2))
-            logger.debug('chi2 in each shape: {0}'.format(chi2))
-            logger.debug('chi2 with weights: {0}'.format(self.weights * chi2))
-            logger.debug('sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
-            logger.debug('chi2 for each star:\n{0}'.format(chi2_l))
-
-            # TODO: extract from psf parameters
-            log = ['\n',
-                    '*******************************************************************************\n',
-                    '* time \t|\t {0:.3e} \t|\t ncalls  \t|\t {1:04d} \t      *\n'.format(time() - self._time, self._n_iter),
-                    '*******************************************************************************\n',
-                    '*  \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
-                    '*******************************************************************************\n',
-                    '* size \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(
-                        self.model.kwargs['r0'], self.model.g1, self.model.g2),]
-            for i in range(0, 8):
-                log.append('* z{0:02d}   |\t {1:+.3e} \t|\t {2:+.3e} \t|\t {3:+.3e}   *\n'.format(
-                    i + 4, self.interp.misalignment[i][0], self.interp.misalignment[i][1],
-                    self.interp.misalignment[i][2]))
-            log += [
+            log =[  '*                                                                             *\n'
                     '*******************************************************************************\n',
                     '* chi2 \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(*(chi2 / dof)),
                     '*******************************************************************************',
@@ -1343,7 +1344,14 @@ class OpticalWavefrontPSF(PSF):
                 logger.info(''.join(log))
             else:
                 logger.debug(''.join(log))
-        self._n_iter += 1
+            if sum(indx) != len(indx):
+                logger.info('Warning! We are using {0} stars out of {1} stars'.format(sum(indx), len(indx)))
+            logger.debug('chi2 array:')
+            logger.debug('chi2 summed: {0}'.format(unreduced_chi2))
+            logger.debug('chi2 in each shape: {0}'.format(chi2))
+            logger.debug('chi2 with weights: {0}'.format(self.weights * chi2))
+            logger.debug('sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
+            logger.debug('chi2 for each star:\n{0}'.format(chi2_l))
 
         if full:
             return unreduced_chi2, dof, chi2, indx, chi_l, chi_flat
