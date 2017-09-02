@@ -936,10 +936,19 @@ class OpticalWavefrontPSF(PSF):
             if not self.fitter_kwargs['fix_' + key]:
                 params[key] = vals[key_i]
                 key_i += 1
+            else:
+                params[key] = self.fitter_kwargs[key]
         gradients, gradients_l, stencils, fx, fy = self.chi2_gradient(
             stars=self._fit_stars, logger=logger, **params)
 
-        return gradients
+        # must only select the relevant gradients
+        gradients_use = []
+        for key_i, key in enumerate(self.keys):
+            if not self.fitter_kwargs['fix_' + key]:
+                gradients_use.append(gradients[key_i])
+        gradients_use = np.array(gradients_use)
+
+        return gradients_use
 
     def _scipy_chi2(self, vals, logger=None):
         # update fitter_kwargs with vals
@@ -1305,7 +1314,7 @@ class OpticalWavefrontPSF(PSF):
                 string = '* dz{0:02d}\t|\t {1} \t|\t {2} \t|\t {3}   *\n'.format(i + 4, *str_list)
                 log.append(string)
 
-            log.append('*******************************************************************************\n')
+            log.append('*******************************************************************************')
             if self._n_iter % 50 == 0:
                 logger.info(''.join(log))
             else:
@@ -1335,8 +1344,8 @@ class OpticalWavefrontPSF(PSF):
         chi_flat = (np.sqrt(self.weights[None]) * chi_l[indx]).flatten()
 
         if logger:
-            log =[  '*                                                                             *\n'
-                    '*******************************************************************************\n',
+            log =[
+                    '\n*******************************************************************************\n',
                     '* chi2 \t|\t {0:+.3e} \t|\t {1:+.3e} \t|\t {2:+.3e}   *\n'.format(*(chi2 / dof)),
                     '*******************************************************************************',
                     ]
@@ -1346,12 +1355,12 @@ class OpticalWavefrontPSF(PSF):
                 logger.debug(''.join(log))
             if sum(indx) != len(indx):
                 logger.info('Warning! We are using {0} stars out of {1} stars'.format(sum(indx), len(indx)))
-            logger.debug('chi2 array:')
-            logger.debug('chi2 summed: {0}'.format(unreduced_chi2))
-            logger.debug('chi2 in each shape: {0}'.format(chi2))
-            logger.debug('chi2 with weights: {0}'.format(self.weights * chi2))
-            logger.debug('sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
-            logger.debug('chi2 for each star:\n{0}'.format(chi2_l))
+            logger.log(5, 'chi2 array:')
+            logger.log(5, 'chi2 summed: {0}'.format(unreduced_chi2))
+            logger.log(5, 'chi2 in each shape: {0}'.format(chi2))
+            logger.log(5, 'chi2 with weights: {0}'.format(self.weights * chi2))
+            logger.log(5, 'sum of weights times dof: {0}'.format(dof * np.sum(self.weights)))
+            logger.log(5, 'chi2 for each star:\n{0}'.format(chi2_l))
 
         if full:
             return unreduced_chi2, dof, chi2, indx, chi_l, chi_flat
@@ -1406,13 +1415,25 @@ class OpticalWavefrontPSF(PSF):
             if calculate_all:
                 stencil_gradient = True
 
+            # if z*d, must consider x and y before we worry about fixed
+            elif key[0] == 'z' and key[-1] == 'd':
+                zx_key = key[:-1] + 'x'
+                zy_key = key[:-1] + 'y'
+                if not self.fitter_kwargs['fix_{0}'.format(key)]:
+                    stencil_gradient = True
+                elif not self.fitter_kwargs['fix_' + zx_key] or not self.fitter_kwargs['fix_' + zy_key]:
+                    stencil_gradient = True
+                else:
+                    gradients_l.append(np.zeros((len(stars), 3)))
+                    stencil_gradient = False
+
+            # if fixed and not z*d, can ignore
             elif self.fitter_kwargs['fix_{0}'.format(key)]:
                 # if a parameter is fixed, skip calculating it!
                 gradients_l.append(np.zeros((len(stars), 3)))
                 stencil_gradient = False
 
             elif key[0] == 'z' and (key[-1] == 'x' or key[-1] == 'y'):
-                # TODO: can go bad if we fixed delta but not x and y
                 if key[-1] == 'x':
                     gradients_l.append(gradients_l[-1] * fy[:, None])
                 elif key[-1] == 'y':
