@@ -391,10 +391,10 @@ class OpticalWavefrontPSF(PSF):
         # update with user kwargs
         self.fitter_kwargs.update(fitter_kwargs)
 
+        self._n_iter = 0
+        self._time = time()
         self.update_psf_params(logger=logger, **self.fitter_kwargs)
 
-        self._time = time()
-        self._n_iter = 0
 
         self.step_sizes = [
             1e-4, 1e-4, 1e-4,  # sizes
@@ -1277,6 +1277,8 @@ class OpticalWavefrontPSF(PSF):
         # now we can update the interp
         self.interp.misalignment = misalignment
 
+        self._n_iter += 1
+
         if logger:
             log = ['\n',
                     '*******************************************************************************\n',
@@ -1285,7 +1287,7 @@ class OpticalWavefrontPSF(PSF):
                     '*  \t|\t d \t\t|\t x \t\t|\t y \t      *\n',
                     '*******************************************************************************\n',]
             # deal with size
-            empty_str = '    -    '
+            empty_str = '    -     '
             format_str = '{0:+.3e}'
 
             str_list = [format_str.format(val)
