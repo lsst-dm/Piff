@@ -847,7 +847,7 @@ class OpticalWavefrontPSF(PSF):
 
 
     def _analytic_chi2(self, vals_in, stars=None, logger=None):
-        if not stars:
+        if not stars or stars == self._fit_stars:
             stars = self._fit_stars
             actual_shapes = self._shapes
             errors = self._errors
@@ -1323,7 +1323,7 @@ class OpticalWavefrontPSF(PSF):
                 logger.debug(''.join(log))
 
     def chi2(self, stars=None, full=False, logger=None):
-        if not stars:
+        if not stars or stars == self._fit_stars:
             stars = self._fit_stars
             actual_shapes = self._shapes
             errors = self._errors
