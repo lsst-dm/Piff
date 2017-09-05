@@ -59,7 +59,6 @@ class GPGeorgeInterp(Interp):
                  normalize=True, logger=None):
         if optimize_frac < 0 or optimize_frac > 1:
             raise ValueError("optimize_frac must be between 0 and 1")
-
         self.keys = keys
         self.kernel = kernel
         self.optimize_frac = optimize_frac
@@ -67,6 +66,13 @@ class GPGeorgeInterp(Interp):
         self.npca = npca
         self.degenerate_points = False
         self.normalize = normalize
+
+        #if white_noise is not None:
+        #    white_noise = np.log(white_noise)
+        if white_noise is not None:
+            self.white_noise = np.log(white_noise)
+        else:
+            self.white_noise = None
 
         self.kwargs = {
             'keys': keys,
@@ -76,10 +82,10 @@ class GPGeorgeInterp(Interp):
             'n_restarts_optimizer': n_restarts_optimizer,
             'npca': npca,
         }
-
+        self.conteur_debug = 0
         self.optimizer = 'fmin_l_bfgs_b' if optimize else None
         self.gp_template = george.GP(self._eval_kernel(self.kernel),
-                                     white_noise=white_noise)
+                                     white_noise=self.white_noise)
 
     @staticmethod
     def _eval_kernel(kernel):
@@ -122,7 +128,7 @@ class GPGeorgeInterp(Interp):
         gp.compute(X, np.zeros(len(y)))
 
         if self.optimizer is not None:
-
+            self.conteur_debug +=1
             def nll(p):
                 gp.set_parameter_vector(p)
                 ll = gp.log_likelihood(y, quiet=True)
@@ -135,7 +141,9 @@ class GPGeorgeInterp(Interp):
             p0 = gp.get_parameter_vector()
             results = op.minimize(nll, p0, jac=grad_nll, method="L-BFGS-B")
             gp.set_parameter_vector(results['x'])
-            print 'ok' 
+
+            if self.nparams == self.conteur_debug:
+                self.optimizer=None
         if logger:
             logger.debug('After fit: kernel = %s',gp.kernel_)
 
