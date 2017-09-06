@@ -1290,14 +1290,28 @@ class OpticalWavefrontPSF(PSF):
             empty_str = '    -     '
             format_str = '{0:+.3e}'
 
+            # catch when the kwargs are None
+            if not self.model.kwargs['r0']:
+                r0_print = 0
+            else:
+                r0_print = self.model.kwargs['r0']
+            if not self.model.g1:
+                g1_print = 0
+            else:
+                g1_print = self.model.g1
+            if not self.model.g2:
+                g2_print = 0
+            else:
+                g2_print = self.model.g2
+
             str_list = [format_str.format(val)
-                         for val in [self.model.kwargs['r0'], self.model.g1, self.model.g2]]
+                         for val in [r0_print, g1_print, g2_print]]
             string = '*  size\t|\t {0} \t|\t {1} \t|\t {2}   *\n'.format(*str_list)
             log.append(string)
 
             str_list = [[empty_str, format_str.format(val - old_val)][val == val and val - old_val != 0]
                          for val, old_val in zip(
-                             [r0, g1, g2],
+                             [r0_print, g1_print, g2_print],
                              [old_r0, old_g1, old_g2]
                              )]
             string = '* dsize\t|\t {0} \t|\t {1} \t|\t {2}   *\n'.format(*str_list)

@@ -606,6 +606,109 @@ def test_undersamp_drift():
     do_undersamp_drift(True)
     do_undersamp_drift(False)
 
+@timer
+def test_convolution():
+    """Test convolution solve
+    """
+    # gaussian parameters [sigma, g1, g2]
+    p1 = [0.8, 0.2, 0.2]
+    p2 = [0.8, -0.2, -0.2]
+    p1 = [0.8, 0.2, 0]
+    p2 = [0.8, -0.2, 0]
+
+    # make the models
+    rtol = 1e-8
+    atol = 5e-2
+    fastfit = True
+    pix_scale = 0.4
+    stamp_size = 24
+    pix_scale_grid = 0.2
+    stamp_size_grid = 48
+    pix_scale_grid = pix_scale
+    stamp_size_grid = stamp_size
+    model = piff.Gaussian(include_pixel=False, force_model_center=True)
+
+    star1 = piff.Star.makeTarget(u=0, v=0, scale=pix_scale, stamp_size=stamp_size)
+    star1.fit = star1.fit.newParams(p1)
+    star1 = model.draw(star1)
+
+    star2 = piff.Star.makeTarget(u=0, v=0, scale=pix_scale, stamp_size=stamp_size)
+    star2.fit = star2.fit.newParams(p2)
+    star2 = model.draw(star2)
+
+    pixelgrid = piff.PixelGrid(pix_scale_grid, stamp_size_grid, start_sigma=1.5, force_model_center=False, degenerate=True, force_interpolated_image=True)
+
+
+    # check: fit to star1 and make sure the p we get makes sense
+    # fit pixelgrid
+    for star_i, star_test in zip([0, 1], [star1, star2]):
+        star_init = pixelgrid.initialize(star_test).withFlux(flux=np.sum(star_test.image.array))
+        star_pixel = pixelgrid.fit(star_init)
+        star_pixel_drawn = pixelgrid.draw(star_pixel)
+        star_pixel_drawn = piff.Star(star_pixel_drawn.data, None)
+        # fit gaussian to pixelgrid
+        star_gaussian = model.fit(star_pixel_drawn.copy(), fastfit=fastfit)
+        star_gaussian_test = model.fit(star_test.copy(), fastfit=fastfit)
+
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.imshow(star_pixel_drawn.data.image.array)
+        plt.colorbar()
+        plt.savefig('star_{0}_noconv_model.png'.format(star_i))
+        plt.figure()
+        plt.imshow(star_test.data.image.array)
+        plt.colorbar()
+        plt.savefig('star_{0}_noconv_data.png'.format(star_i))
+        print('Parameters of single gaussian fit')
+        print(star_test.fit.params)
+        print(star_gaussian.fit.params)
+        print(star_gaussian_test.fit.params)
+
+        # compare gaussian to p1
+        np.testing.assert_allclose(star_test.fit.params, star_gaussian.fit.params, rtol=rtol, atol=atol)
+
+    # draw convoved image
+    profs = []
+    for star in [star1, star2]:
+        prof = model.getProfile(star.fit.params).shift(star.fit.center) #* star.fit.flux
+        profs.append(prof)
+    prof = galsim.Convolve(profs)
+    image = star.image.copy()
+    prof.drawImage(image, method='no_pixel')
+    weight = star.weight
+    # make some weights masked to make sure the reshaping goes OK
+    # weight.image.array[1,:] = 0
+    data = piff.StarData(image, star.image_pos, weight, star.data.pointing, properties=star.data.properties, _xyuv_set=True)
+    star = piff.Star(data, None)
+
+    # fit pixelgrid with star already having another model
+    for star_i, star_test in zip([1, 0], [star1, star2]):
+        # star_i is the _other_ star's profile
+        star.data.properties['other_model'] = profs[star_i]
+
+        star_init = pixelgrid.initialize(star).withFlux(flux=np.sum(star.image.array))
+        star_pixel = pixelgrid.fit(star_init)
+        star_pixel_drawn = pixelgrid.draw(star_pixel)
+        star_pixel_drawn = piff.Star(star_pixel_drawn.data, None)
+        # fit gaussian to pixelgrid
+        star_gaussian = model.fit(star_pixel_drawn.copy(), fastfit=fastfit)
+        star_gaussian_test = model.fit(star.copy(), fastfit=fastfit)
+
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.imshow(star_pixel_drawn.data.image.array)
+        plt.colorbar()
+        plt.savefig('star_{0}_conv_model.png'.format(star_i))
+        plt.figure()
+        plt.imshow(star.data.image.array)
+        plt.colorbar()
+        plt.savefig('star_{0}_conv_data.png'.format(star_i))
+        print('Parameters of convolution fit')
+        print(star_test.fit.params)
+        print(star_gaussian.fit.params)
+        print(star_gaussian_test.fit.params)
+
+        np.testing.assert_allclose(star_test.fit.params, star_gaussian.fit.params, rtol=rtol, atol=atol)
 
 @timer
 def test_single_image():
@@ -1005,6 +1108,7 @@ if __name__ == '__main__':
     test_undersamp_drift()
     test_single_image()
     test_des_image()
+    test_convolution()
     #pr.disable()
     #ps = pstats.Stats(pr).sort_stats('tottime').reverse_order()
     #ps.print_stats()

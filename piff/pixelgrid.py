@@ -48,7 +48,7 @@ class PixelGrid(Model):
 
     """
     def __init__(self, scale, size, interp=None, mask=None, start_sigma=1.,
-                 force_model_center=True, degenerate=True, logger=None):
+                 force_model_center=True, degenerate=True, force_interpolated_image=False, logger=None):
         """Constructor for PixelGrid defines the PSF pitch, size, and interpolator.
 
         :param scale:       Pixel scale of the PSF model (in arcsec)
@@ -64,6 +64,7 @@ class PixelGrid(Model):
                             [default: True]
         :param degenerate:  Is it possible that individual stars give degenerate PSF sol'n?
                             If False, it runs faster, but fails on degeneracies. [default: True]
+        :param force_interpoalted_iamge: If True, when calculating chisq or reflux, will force evaluation to be via a galsim InterpolatedImage gsobject, instead of a straight array [default: False]
         :param logger:      A logger object for logging debug info. [default: None]
         """
         logger = galsim.config.LoggerWrapper(logger)
@@ -82,6 +83,7 @@ class PixelGrid(Model):
         self.interp = interp
         self._force_model_center = force_model_center
         self._degenerate = degenerate
+        self._force_interpolated_image = force_interpolated_image
 
         # These are the kwargs that can be serialized easily.
         # TODO: Add interp to this, so it can be specified in the yaml file and read/written.
@@ -90,7 +92,8 @@ class PixelGrid(Model):
             'size' : size,
             'start_sigma' : start_sigma,
             'force_model_center' : force_model_center,
-            'degenerate' : degenerate
+            'degenerate' : degenerate,
+            'force_interpolated_image': force_interpolated_image,
         }
 
         if mask is None:
@@ -363,7 +366,6 @@ class PixelGrid(Model):
         return Star(star1.data, starfit2)
 
     def chisq(self, star, logger=None):
-        # TODO: profile goes in here
         """Calculate dependence of chi^2 = -2 log L(D|p) on PSF parameters for single star.
         as a quadratic form chi^2 = dp^T*alpha*dp - 2*beta*dp + chisq,
         where dp is the *shift* from current parameter values.  Marginalization over
@@ -378,7 +380,12 @@ class PixelGrid(Model):
         """
 
         # Start by getting all interpolation coefficients for all observed points
-        data, weight, u, v = star.data.getDataVector()
+        data, weight, u, v = star.data.getDataVector(include_zero_weight=False)
+        mask = weight != 0.
+        data = data[mask]
+        weight = weight[mask]
+        u = u[mask]
+        v = v[mask]
         if not star.data.values_are_sb:
             # If the images are flux instead of surface brightness, convert
             # them into SB
@@ -411,10 +418,40 @@ class PixelGrid(Model):
         # Multiply kernel (and derivs) by current PSF element values
         # to get current estimates
         pvals = self._fullPsf1d(star)[index1d]
-        mod = np.sum(coeffs*pvals, axis=1)
+        # incorporate interpolatedimage profile
+        # do mod_full
+        """
+        OK this isn't quite working.
+
+        Before I even get into the convolution, I need to make sure that the interpoalted image piece works correctly. This doesn't though :(
+        things that are odd:
+            - the having to divide by the pixel area for the image (this means this probably breaks somehow when we use the surface brightness or some such)
+            - not sure how this stuff will interact when we have to fit for offcenter stuff, or for when we do the reflux
+        """
+        if self._force_interpolated_image or 'other_model' in star.data.properties:
+            star_temp = self.draw(star, include_zero_weight=False)
+            image, _, image_pos = star_temp.data.getImage()
+
+            # TODO: I do not understand this
+            if not star.data.values_are_sb:
+                image *= 1. / star.data.pixel_area
+
+            prof = galsim.InterpolatedImage(image).shift(star.fit.center) * star.fit.flux
+            if 'other_model' in star.data.properties:
+                prof = galsim.Convolve([star_temp.data.properties['other_model'], prof])
+            model_image = galsim.Image(image, dtype=float)
+            center = galsim.PositionD(*star.fit.center)
+            offset = star.data.image_pos + center - star.data.image.trueCenter()
+            prof.drawImage(model_image, method='no_pixel', offset=offset)
+            star_temp_2 = Star(star.data.setData(model_image.array.flatten(), include_zero_weight=True), None)
+            mod, _, _, _ = star_temp_2.data.getDataVector()
+        else:
+            mod = np.sum(coeffs*pvals, axis=1)
+
         if self._force_model_center:
             dmdu = star.fit.flux * np.sum(dcdu*pvals, axis=1)
             dmdv = star.fit.flux * np.sum(dcdv*pvals, axis=1)
+
         resid = data - mod*star.fit.flux
 
         # Now begin construction of alpha/beta/chisq that give
@@ -517,7 +554,8 @@ class PixelGrid(Model):
 
         return Star(star.data, outfit)
 
-    def draw(self, star):
+    # def draw(self, star):
+    def draw(self, star, include_zero_weight=True):
         """Create new Star instance that has StarData filled with a rendering
         of the PSF specified by the current StarFit parameters, flux, and center.
         Coordinate mapping of the current StarData is assumed.
@@ -527,7 +565,7 @@ class PixelGrid(Model):
         :returns:      New Star instance with rendered PSF in StarData
         """
         # Start by getting all interpolation coefficients for all observed points
-        data, weight, u, v = star.data.getDataVector(include_zero_weight=True)
+        data, weight, u, v = star.data.getDataVector(include_zero_weight=include_zero_weight)
         # Subtract star.fit.center from u, v
         u -= star.fit.center[0]
         v -= star.fit.center[1]
@@ -547,10 +585,9 @@ class PixelGrid(Model):
             # Change data from surface brightness into flux
             model *= star.data.pixel_area
 
-        return Star(star.data.setData(model,include_zero_weight=True), star.fit)
+        return Star(star.data.setData(model,include_zero_weight=include_zero_weight), star.fit)
 
     def reflux(self, star, fit_center=True, logger=None):
-        # TODO: deal with profile here
         """Fit the Model to the star's data, varying only the flux (and
         center, if it is free).  Flux and center are updated in the Star's
         attributes.  This is a single-step solution if only solving for flux,
@@ -614,16 +651,27 @@ class PixelGrid(Model):
             # Multiply kernel (and derivs) by current PSF element values
             # to get current estimates
             pvals = self._fullPsf1d(star)[index1d]
-            mod = np.sum(coeffs*pvals, axis=1)
-            if 'other_model' in star.data.properties:
-                # TODO
-                # need to fit a GMM to the model, convolve it with the other_model, draw it, flatten it, and get residual
-                if do_center:
-                    # need to repeat above procedure for dmdu, dmdv too
-                    pass
-                else:
-                    pass
-                pass
+            # TODO: deal with other_model
+            if self._force_interpolated_image or 'other_model' in star.data.properties:
+                star_temp = self.draw(star, include_zero_weight=False)
+                image, _, image_pos = star_temp.data.getImage()
+
+                # TODO: I do not understand this
+                if not star.data.values_are_sb:
+                    image *= 1. / star.data.pixel_area
+
+                prof = galsim.InterpolatedImage(image).shift(star.fit.center) * star.fit.flux
+                if 'other_model' in star.data.properties:
+                    prof = galsim.Convolve([star_temp.data.properties['other_model'], prof])
+                model_image = galsim.Image(image, dtype=float)
+                center = galsim.PositionD(*star.fit.center)
+                offset = star.data.image_pos + center - star.data.image.trueCenter()
+                prof.drawImage(model_image, method='no_pixel', offset=offset)
+                star_temp_2 = Star(star.data.setData(model_image.array.flatten(), include_zero_weight=True), None)
+                mod, _, _, _ = star_temp_2.data.getDataVector()
+            else:
+                mod = np.sum(coeffs*pvals, axis=1)
+
             if do_center:
                 dmdu = flux * np.sum(dcdu*pvals, axis=1)
                 dmdv = flux * np.sum(dcdv*pvals, axis=1)
