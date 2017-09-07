@@ -327,9 +327,9 @@ class GaussianMixtureModel(Model):
                     logger.debug('{0}, {1:.2e}, {2:+.2e}, {3:+.2e}, {4:.2e}, {5:+.2e}, {6:+.2e}'.format(indx, *params[self._niter * indx: self._niter * (indx + 1)]))
 
         # Also need to compute chisq
-        prof = self.getProfile(params) * star.fit.flux
+        fit_nochisq = StarFit(params, flux=star.fit.flux, center=star.fit.center)
+        prof = self.getProfile(Star(star.data, fit_nochisq))
         model_image = star.image.copy()
-        prof = prof.shift(star.fit.center)
         if 'other_model' in star.data.properties:
             prof = galsim.Convolve([star.data.properties['other_model'], prof])
         prof.drawImage(model_image, method='no_pixel',
@@ -422,23 +422,25 @@ class GaussianMixtureModel(Model):
 
         :returns: a new Star instance with the data field having an image of the drawn model.
         """
-        prof = self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        prof = self.getProfile(star)
         image = star.image.copy()
         # never use pixelization
         prof.drawImage(image, method='no_pixel', offset=(star.image_pos-image.trueCenter()))
         data = StarData(image, star.image_pos, star.weight, star.data.pointing, properties=star.data.properties, _xyuv_set=True)
         return Star(data, star.fit)
 
-    def getProfile(self, params):
+    def getProfile(self, star):
         """Get a version of the model as a GalSim GSObject
 
-        :param params:      A numpy array with list of either [ weight, size, g1, g2 ]
-                            or  [ weight, cenu, cenv, size, g1, g2 ]
-                            depending on if the center of the model is being forced to (0.0, 0.0)
+        :param star:        A star with a fit that has A numpy array with list
+                            of either [ weight, size, g1, g2 ] or  [ weight,
+                            cenu, cenv, size, g1, g2 ] depending on if the
+                            center of the model is being forced to (0.0, 0.0)
                             or not.
 
         :returns: a galsim.GSObject instance
         """
+        params = star.fit.params
         for indx in range(self.kwargs['n_gaussian']):
             params_indx = params[self._niter * indx: self._niter * (indx + 1)]
             if self.kwargs['force_model_center']:
@@ -451,4 +453,6 @@ class GaussianMixtureModel(Model):
                 gmm = prof
             else:
                 gmm = gmm + prof
+        # TODO: do I need the star.fit.flux?
+        gmm = gmm.shift(star.fit.center) * star.fit.flux
         return gmm

@@ -68,7 +68,7 @@ class GSObjectModel(Model):
 
         if 'other_model' in star.data.properties:
             # TODO: what do we do if the other_model is a pixel image like in pixel_grid?
-            prof = galsim.Convolve([self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux, star.data.properties['other_model']])
+            prof = galsim.Convolve([self.getProfile(star), star.data.properties['other_model']])
             center = galsim.PositionD(*star.fit.center)
             offset = star.data.image_pos + center - star.data.image.trueCenter()
             model_image = prof.drawImage(star.data.image.copy(), method=self._method, offset=offset)
@@ -137,22 +137,24 @@ class GSObjectModel(Model):
 
         return param_flux, param_du, param_dv, param_scale, param_g1, param_g2
 
-    def getProfile(self, params):
+    def getProfile(self, star):
         """Get a version of the model as a GalSim GSObject
 
-        :param params:      A numpy array with either  [ size, g1, g2 ]
-                            or  [ cenu, cenv, size, g1, g2 ]
-                            depending on if the center of the model is being forced to (0.0, 0.0)
-                            or not.
+        :param star:        Star whose fit params are a numpy array with either
+                            [ size, g1, g2 ] or  [ cenu, cenv, size, g1, g2 ]
+                            depending on if the center of the model is being
+                            forced to (0.0, 0.0) or not.
 
         :returns: a galsim.GSObject instance
         """
         if self._force_model_center:
-            scale, g1, g2 = params
+            scale, g1, g2 = star.fit.params
             du, dv = (0.0, 0.0)
+            prof = self.gsobj.dilate(scale).shear(g1=g1, g2=g2)
         else:
-            du, dv, scale, g1, g2 = params
-        prof = self.gsobj.dilate(scale).shear(g1=g1, g2=g2).shift(du, dv)
+            du, dv, scale, g1, g2 = star.fit.params
+            prof = self.gsobj.dilate(scale).shear(g1=g1, g2=g2).shift(du, dv)
+        prof = prof.shift(star.fit.center) * star.fit.flux
         return prof
 
     def draw(self, star):
@@ -163,7 +165,7 @@ class GSObjectModel(Model):
 
         :returns: a new Star instance with the data field having an image of the drawn model.
         """
-        prof = self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        prof = self.getProfile(star)
         image = star.image.copy()
         prof.drawImage(image, method=self._method, offset=(star.image_pos-image.trueCenter()))
         data = StarData(image, star.image_pos, star.weight, star.data.pointing, properties=star.data.properties, _xyuv_set=True)
@@ -320,9 +322,9 @@ class GSObjectModel(Model):
             center = (0.0, 0.0)
 
         # Also need to compute chisq
-        prof = self.getProfile(params) * flux
+        fit_nochisq = StarFit(params, flux=flux, center=center)
+        prof = self.getProfile(Star(star.data, fit_nochisq))
         model_image = star.image.copy()
-        prof = prof.shift(center)
         if 'other_model' in star.data.properties:
             prof = galsim.Convolve([star.data.properties['other_model'], prof])
         prof.drawImage(model_image, method=self._method,
@@ -390,9 +392,8 @@ class GSObjectModel(Model):
         else:
             image, weight, image_pos = star.data.getImage()
             if 'other_model' in star.data.properties:
-                prof = self.getProfile(star.fit.params) * star.fit.flux
+                prof = self.getProfile(star)
                 model_image = star.image.copy()
-                prof = prof.shift(star.fit.center)
                 prof = galsim.Convolve([star.data.properties['other_model'], prof])
                 prof.drawImage(model_image, method=self._method,
                                              offset=(star.image_pos - model_image.trueCenter()))

@@ -247,13 +247,13 @@ def test_convolution():
     star2 = model.draw(star2)
 
     # assign 'other_model' to each other
-    star1.data.properties['other_model'] = model.getProfile(star2.fit.params).shift(star2.fit.center) * star2.fit.flux
-    star2.data.properties['other_model'] = model.getProfile(star1.fit.params).shift(star1.fit.center) * star1.fit.flux
+    star1.data.properties['other_model'] = model.getProfile(star2)
+    star2.data.properties['other_model'] = model.getProfile(star1)
 
     # redraw star1 and star2 with the convolutions
     stars = []
     for star in [star1, star2]:
-        prof = model.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        prof = model.getProfile(star)
         prof = galsim.Convolve([star.data.properties['other_model'], prof])
         image = star.image.copy()
         prof.drawImage(image, method=model._method, offset=(star.image_pos-image.trueCenter()))

@@ -252,15 +252,7 @@ class SimplePSF(PSF):
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
         # get the profile
-        try:
-            prof = self.model.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
-        except AttributeError:
-            # no getProfile function in model
-            # draw star and return InterpolatedImage
-            star_model = self.drawStar(star)
-            image, _, _ = star_model.data.getImage()
-            # TODO: should this be star_model, not star?
-            prof = galsim.InterpolatedImage(image).shift(star.fit.center) * star.fit.flux
+        prof = self.model.getProfile(star)
         return prof
 
     def getParams(self, star):

@@ -1632,7 +1632,7 @@ class OpticalWavefrontPSF(PSF):
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
         # get the profile
-        prof = self.model.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        prof = self.model.getProfile(star)
         return prof
 
     def getParams(self, star):

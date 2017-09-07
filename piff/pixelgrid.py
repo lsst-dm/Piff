@@ -420,22 +420,16 @@ class PixelGrid(Model):
         pvals = self._fullPsf1d(star)[index1d]
 
         if self._force_interpolated_image or 'other_model' in star.data.properties:
-            star_temp = self.draw(star, include_zero_weight=False)
-            image, _, image_pos = star_temp.data.getImage()
-
-            # TODO: I do not understand this
-            if not star.data.values_are_sb:
-                image *= 1. / star.data.pixel_area
-
-            prof = galsim.InterpolatedImage(image).shift(star.fit.center) * star.fit.flux
+            prof = self.getProfile(star, include_zero_weight=False)
             if 'other_model' in star.data.properties:
-                prof = galsim.Convolve([star_temp.data.properties['other_model'], prof])
-            model_image = galsim.Image(image, dtype=float)
+                prof = galsim.Convolve([star.data.properties['other_model'], prof])
+            model_image = galsim.Image(star.image, dtype=float)
             center = galsim.PositionD(*star.fit.center)
             offset = star.data.image_pos + center - star.data.image.trueCenter()
             prof.drawImage(model_image, method='no_pixel', offset=offset)
-            star_temp_2 = Star(star.data.setData(model_image.array.flatten(), include_zero_weight=True), None)
-            mod, _, _, _ = star_temp_2.data.getDataVector()
+            # TODO: this feels super redundant.
+            star_temp = Star(star.data.setData(model_image.array.flatten(), include_zero_weight=True), None)
+            mod, _, _, _ = star_temp.data.getDataVector()
         else:
             mod = np.sum(coeffs*pvals, axis=1)
 
@@ -545,6 +539,23 @@ class PixelGrid(Model):
 
         return Star(star.data, outfit)
 
+    def getProfile(self, star, include_zero_weight=True):
+        """Represent pixelgrid as a gsobject via interpolated image
+
+        :param star:    A Star instance
+
+        :returns:       A gsobject
+        """
+        star_temp = self.draw(star, include_zero_weight=False)
+        image, _, image_pos = star_temp.data.getImage()
+
+        # TODO: I do not understand this
+        if not star.data.values_are_sb:
+            image *= 1. / star.data.pixel_area
+
+        prof = galsim.InterpolatedImage(image).shift(star.fit.center) * star.fit.flux
+        return prof
+
     def draw(self, star, include_zero_weight=True):
         """Create new Star instance that has StarData filled with a rendering
         of the PSF specified by the current StarFit parameters, flux, and center.
@@ -644,22 +655,16 @@ class PixelGrid(Model):
 
             # TODO: redundant code with fit
             if self._force_interpolated_image or 'other_model' in star.data.properties:
-                star_temp = self.draw(star, include_zero_weight=False)
-                image, _, image_pos = star_temp.data.getImage()
-
-                # TODO: I do not understand this
-                if not star.data.values_are_sb:
-                    image *= 1. / star.data.pixel_area
-
-                prof = galsim.InterpolatedImage(image).shift(star.fit.center) * star.fit.flux
+                prof = self.getProfile(star, include_zero_weight=False)
                 if 'other_model' in star.data.properties:
-                    prof = galsim.Convolve([star_temp.data.properties['other_model'], prof])
-                model_image = galsim.Image(image, dtype=float)
+                    prof = galsim.Convolve([star.data.properties['other_model'], prof])
+                model_image = galsim.Image(star.image, dtype=float)
                 center = galsim.PositionD(*star.fit.center)
                 offset = star.data.image_pos + center - star.data.image.trueCenter()
                 prof.drawImage(model_image, method='no_pixel', offset=offset)
-                star_temp_2 = Star(star.data.setData(model_image.array.flatten(), include_zero_weight=True), None)
-                mod, _, _, _ = star_temp_2.data.getDataVector()
+                # TODO: this feels super redundant.
+                star_temp = Star(star.data.setData(model_image.array.flatten(), include_zero_weight=True), None)
+                mod, _, _, _ = star_temp.data.getDataVector()
             else:
                 mod = np.sum(coeffs*pvals, axis=1)
 

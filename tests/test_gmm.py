@@ -83,9 +83,9 @@ def test_single():
     np.testing.assert_allclose(star_model.fit.params, params, atol=1e-4)
 
     # test getProfile
-    prof_model = model.getProfile(star.fit)
+    prof_model = model.getProfile(star)
     weight, mu_u, mu_v, sigma, g1, g2 = params
-    prof = galsim.Gaussian(sigma=1.0).dilate(sigma).shear(g1=g1, g2=g2).shift(mu_u, mu_v) * weight
+    prof = (galsim.Gaussian(sigma=1.0).dilate(sigma).shear(g1=g1, g2=g2).shift(mu_u, mu_v) * weight).shift(star.fit.center) * star.fit.flux
     assert prof==prof_model,"getProfile produces incorrect profile"
 
     # test draw
@@ -130,7 +130,7 @@ def test_complex():
     np.testing.assert_allclose(star_model.fit.params, params, atol=1e-4)
 
     # test getProfile
-    prof_model = model.getProfile(star.fit)
+    prof_model = model.getProfile(star)
     for indx in range(n_gaussian):
         weight, mu_u, mu_v, sigma, g1, g2 = params[model._niter * indx: model._niter * (indx + 1)]
         prof_i = galsim.Gaussian(sigma=1.0).dilate(sigma).shear(g1=g1, g2=g2).shift(mu_u, mu_v) * weight
@@ -138,6 +138,7 @@ def test_complex():
             prof = prof_i
         else:
             prof = prof + prof_i
+    prof = prof.shift(star.fit.center) * star.fit.flux
     assert prof==prof_model,"getProfile produces incorrect profile"
 
     # test draw

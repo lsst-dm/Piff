@@ -630,10 +630,12 @@ def test_convolution():
 
     star1 = piff.Star.makeTarget(u=0, v=0, scale=pix_scale, stamp_size=stamp_size)
     star1.fit = star1.fit.newParams(p1)
+    star1 = star1.withFlux(flux=1.)
     star1 = model.draw(star1)
 
     star2 = piff.Star.makeTarget(u=0, v=0, scale=pix_scale, stamp_size=stamp_size)
     star2.fit = star2.fit.newParams(p2)
+    star2 = star2.withFlux(flux=1.)
     star2 = model.draw(star2)
 
     pixelgrid = piff.PixelGrid(pix_scale_grid, stamp_size_grid, start_sigma=1.5, force_model_center=False, degenerate=True, force_interpolated_image=True)
@@ -670,7 +672,7 @@ def test_convolution():
     # draw convoved image
     profs = []
     for star in [star1, star2]:
-        prof = model.getProfile(star.fit.params).shift(star.fit.center) #* star.fit.flux
+        prof = model.getProfile(star)
         profs.append(prof)
     prof = galsim.Convolve(profs)
     image = star.image.copy()

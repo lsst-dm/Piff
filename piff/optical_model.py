@@ -213,7 +213,7 @@ class Optical(Model):
         # check if star has other_model
         if 'other_model' in star.data.properties:
             # TODO: what do we do if the other_model is a pixel image like in pixel_grid?
-            prof = galsim.Convolve([self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux, star.data.properties['other_model']], gsparams=self.gsparams)
+            prof = galsim.Convolve([self.getProfile(star), star.data.properties['other_model']], gsparams=self.gsparams)
             center = galsim.PositionD(*star.fit.center)
             offset = star.data.image_pos + center - star.data.image.trueCenter()
             model_image = prof.drawImage(star.data.image.copy(), method='auto', offset=offset)
@@ -228,14 +228,16 @@ class Optical(Model):
         fit = StarFit(star.fit.params, flux=star.fit.flux, center=star.fit.center, chisq=chisq, dof=dof)
         return Star(star.data, fit)
 
-    def getProfile(self, params):
+    def getProfile(self, star):
         """Get a version of the model as a GalSim GSObject
 
-        :param params:      A np array with [z4, z5, z6...z11]
+        :param star:    A Star object
 
         :returns: a galsim.GSObject instance
         """
         import galsim
+
+        params = star.fit.params
         prof = []
         # gaussian
         # TODO: check sigma <= 0 and flip out?
@@ -266,6 +268,9 @@ class Optical(Model):
         if self.g1 is not None or self.g2 is not None:
             prof = prof.shear(g1=self.g1, g2=self.g2)
 
+        # shift and shear the profile
+        prof = prof.shift(star.fit.center) * star.fit.flux
+
         return prof
 
     def draw(self, star):
@@ -277,7 +282,7 @@ class Optical(Model):
         :returns: a new Star instance with the data field having an image of the drawn model.
         """
         import galsim
-        prof = self.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
+        prof = self.getProfile(star)
         center = galsim.PositionD(*star.fit.center)
         offset = star.data.image_pos + center - star.data.image.trueCenter()
         image = prof.drawImage(star.data.image.copy(), method='auto', offset=offset)
