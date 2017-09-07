@@ -883,6 +883,12 @@ class OpticalWavefrontPSF(PSF):
         # total chi2
         chi_squared = np.sum(self.weights * chi2_long) / (3 * len(stars) - len(vals_in)) / np.sum(self.weights)
 
+        if logger:
+            string = 'chi2: {0:.2e}\nParams:'.format(chi_squared)
+            for val in vals_in:
+                string += ' {0:+.2e},'.format(val)
+            logger.debug(string)
+
         return chi_squared
 
     def _analytic_fit(self, logger=None):

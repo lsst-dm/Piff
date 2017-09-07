@@ -239,13 +239,15 @@ class SimplePSF(PSF):
         """
         return [self.drawStar(star) for star in stars]
 
-    def getProfile(self, star, **gmm_kwargs):
+    def getProfile(self, star):
         """Get galsim profile for a given star.
 
         :param star:        Star instance holding information needed for interpolation as
                             well as an image/WCS into which PSF will be rendered.
 
         :returns:           Galsim profile
+
+        TODO: does this need to return flux?
         """
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
@@ -253,13 +255,12 @@ class SimplePSF(PSF):
         try:
             prof = self.model.getProfile(star.fit.params).shift(star.fit.center) * star.fit.flux
         except AttributeError:
-            # no getProfile function, so fit a GMM to it
-            # draw the star
+            # no getProfile function in model
+            # draw star and return InterpolatedImage
             star_model = self.drawStar(star)
-            # fit the profile
-            model = GaussianMixtureModel(**gmm_kwargs)
-            star_gmm = model.fit(star_model)
-            prof = model.getProfile(star_gmm)
+            image, _, _ = star_model.data.getImage()
+            # TODO: should this be star_model, not star?
+            prof = galsim.InterpolatedImage(image).shift(star.fit.center) * star.fit.flux
         return prof
 
     def getParams(self, star):

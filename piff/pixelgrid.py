@@ -418,16 +418,7 @@ class PixelGrid(Model):
         # Multiply kernel (and derivs) by current PSF element values
         # to get current estimates
         pvals = self._fullPsf1d(star)[index1d]
-        # incorporate interpolatedimage profile
-        # do mod_full
-        """
-        OK this isn't quite working.
 
-        Before I even get into the convolution, I need to make sure that the interpoalted image piece works correctly. This doesn't though :(
-        things that are odd:
-            - the having to divide by the pixel area for the image (this means this probably breaks somehow when we use the surface brightness or some such)
-            - not sure how this stuff will interact when we have to fit for offcenter stuff, or for when we do the reflux
-        """
         if self._force_interpolated_image or 'other_model' in star.data.properties:
             star_temp = self.draw(star, include_zero_weight=False)
             image, _, image_pos = star_temp.data.getImage()
@@ -554,7 +545,6 @@ class PixelGrid(Model):
 
         return Star(star.data, outfit)
 
-    # def draw(self, star):
     def draw(self, star, include_zero_weight=True):
         """Create new Star instance that has StarData filled with a rendering
         of the PSF specified by the current StarFit parameters, flux, and center.
@@ -651,7 +641,8 @@ class PixelGrid(Model):
             # Multiply kernel (and derivs) by current PSF element values
             # to get current estimates
             pvals = self._fullPsf1d(star)[index1d]
-            # TODO: deal with other_model
+
+            # TODO: redundant code with fit
             if self._force_interpolated_image or 'other_model' in star.data.properties:
                 star_temp = self.draw(star, include_zero_weight=False)
                 image, _, image_pos = star_temp.data.getImage()
