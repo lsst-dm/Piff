@@ -67,8 +67,6 @@ class GPGeorgeInterp(Interp):
         self.degenerate_points = False
         self.normalize = normalize
 
-        #if white_noise is not None:
-        #    white_noise = np.log(white_noise)
         if white_noise is not None:
             self.white_noise = np.log(white_noise)
         else:
@@ -82,8 +80,9 @@ class GPGeorgeInterp(Interp):
             'n_restarts_optimizer': n_restarts_optimizer,
             'npca': npca,
         }
-        self.conteur_debug = 0
-        self.optimizer = 'fmin_l_bfgs_b' if optimize else None
+        self.count = 0
+        self.optimizer = optimize
+        self._optimizer_init = copy.deepcopy(optimize)
         self.gp_template = george.GP(self._eval_kernel(self.kernel),
                                      white_noise=self.white_noise)
 
@@ -127,8 +126,8 @@ class GPGeorgeInterp(Interp):
 
         gp.compute(X, np.zeros(len(y)))
 
-        if self.optimizer is not None:
-            self.conteur_debug +=1
+        if self.optimizer:
+            self.count +=1
             def nll(p):
                 gp.set_parameter_vector(p)
                 ll = gp.log_likelihood(y, quiet=True)
@@ -142,8 +141,9 @@ class GPGeorgeInterp(Interp):
             results = op.minimize(nll, p0, jac=grad_nll, method="L-BFGS-B")
             gp.set_parameter_vector(results['x'])
 
-            if self.nparams == self.conteur_debug:
-                self.optimizer=None
+            if self.nparams == self.count:
+                self.optimizer = False
+                self.count = 0
         if logger:
             logger.debug('After fit: kernel = %s',gp.kernel_)
 
@@ -208,8 +208,10 @@ class GPGeorgeInterp(Interp):
             self._mean = np.mean(y,axis=0)
         else:
             self._mean = np.zeros(self.nparams)
+        self._init_theta = []
         for i in range(self.nparams):
             gp = self.gps[i]
+            self._init_theta.append(gp.get_parameter_vector())
             self._fit(self.gps[i], X, y[:,i]-self._mean[i], logger=logger)
             if logger:
                 logger.info('param %d: %s',i,gp.kernel_)
@@ -251,11 +253,11 @@ class GPGeorgeInterp(Interp):
         # Note, we're only storing the training data and hyperparameters here, which means the
         # Cholesky decomposition will have to be re-computed when this object is read back from
         # disk.
-        init_theta = np.array([gp.kernel.theta for gp in self.gps]) #TO CHANGE IN RESPECT WITH GEORGE
-        fit_theta = np.array([gp.kernel_.theta for gp in self.gps]) #TO CHANGE IN RESPECT WITH GEORGE
+        init_theta = np.array([self._init_theta[i] for i in range(self.nparams)])
+        fit_theta = np.array([gp.get_parameter_vector() for gp in self.gps])
 
-        dtypes = [('INIT_THETA', init_theta.dtype, init_theta.shape), #TO CHANGE IN RESPECT WITH GEORGE
-                  ('FIT_THETA', fit_theta.dtype, fit_theta.shape), #TO CHANGE IN RESPECT WITH GEORGE
+        dtypes = [('INIT_THETA', init_theta.dtype, init_theta.shape),
+                  ('FIT_THETA', fit_theta.dtype, fit_theta.shape),
                   ('X', self._X.dtype, self._X.shape),
                   ('Y', self._y.dtype, self._y.shape)]
 
@@ -273,15 +275,23 @@ class GPGeorgeInterp(Interp):
         # set the GP up using the current hyperparameters.
         init_theta = np.atleast_1d(data['INIT_THETA'][0])
         fit_theta = np.atleast_1d(data['FIT_THETA'][0])
+
         self._X = np.atleast_1d(data['X'][0])
         self._y = np.atleast_1d(data['Y'][0])
+        self._init_theta = init_theta
         self.nparams = len(init_theta)
-        self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)] #TO CHANGE IN RESPECT WITH GEORGE
+        if self.normalize:
+            self._mean = np.mean(self._y,axis=0)
+        else:
+            self._mean = np.zeros(self.nparams)
+        self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)]
+        #print self._mean
         for i in range(self.nparams):
             gp = self.gps[i]
-            gp.kernel.theta = fit_theta[i] #TO CHANGE IN RESPECT WITH GEORGE
-            gp.optimizer = None #TO CHANGE IN RESPECT WITH GEORGE
-            self._fit(gp, self._X, self._y[:,i]) #TO CHANGE IN RESPECT WITH GEORGE
-            gp.optimizer = self.gp_template.optimizer #TO CHANGE IN RESPECT WITH GEORGE
+            gp.set_parameter_vector(fit_theta[i])
+            self.optimizer = False
+            self._fit(gp, self._X, self._y[:,i]-self._mean[i])
+            self._solve
+            self.optimizer = self._optimizer_init 
             # Now that gp is setup, we can restore it's initial kernel.
-            gp.kernel.theta = init_theta[i] #TO CHANGE IN RESPECT WITH GEORGE
+
