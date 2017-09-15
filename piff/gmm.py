@@ -67,20 +67,22 @@ def do_estep(X, means, covars, weights):
 
     return logprob, responsibilities
 
-def do_mstep(X, I, responsibilities, force_model_center=False):
+def do_mstep(X, I, dX, responsibilities, force_model_center=False):
     """ Perform the Mstep of the EM algorithm and return the class weights.
 
     X is something like X[0] = [-100, -100]
     I is something like I[0] = 500
 
     """
-    tau_ij__I_i = responsibilities * I[:, np.newaxis]
-    inverse_weighted = tau_ij__I_i.sum(axis=0) + 1e-15  # add a small bit for numerical issues
-    # sum_I_i = tau_ij__I_i.sum()
 
-    weights = tau_ij__I_i.sum(axis=0)
+    tau_ij__I_i = (I * dX)[:, np.newaxis] * responsibilities
+    top_weights = tau_ij__I_i.sum(axis=0)
+    bottom_weights = top_weights.sum() / (I * dX).sum()
+    weights = top_weights / bottom_weights
+    # add a small bit for top_weights
+    top_weights += 1e-15
     means = np.dot(tau_ij__I_i.T, X)
-    means /= inverse_weighted[:, np.newaxis]
+    means /= top_weights[:, np.newaxis]
     if force_model_center:
         means = means * 0
     """
@@ -98,13 +100,13 @@ def do_mstep(X, I, responsibilities, force_model_center=False):
     xmu = xmup[:,:,:,np.newaxis] * xmup[:,:,np.newaxis,:]
     # this is way slow :(
     covars = (tau_ij__I_i.T[:,:,np.newaxis,np.newaxis] * xmu).sum(axis=1)
-    covars /= inverse_weighted[:, np.newaxis, np.newaxis]
+    covars /= top_weights[:, np.newaxis, np.newaxis]
     # add a small bit of covariance to the diagonal
     covars += 1e-7 * np.eye(X.shape[1])
 
     return means, covars, weights
 
-def do_em(I, X, n_gaussian=1, maxiter=100, tol=1e-04, force_model_center=False, logger=None):
+def do_em(I, X, dX, n_gaussian=1, maxiter=100, tol=1e-04, force_model_center=False, logger=None):
     """Use expectation maximization to reduce a star's image to a mixture of gaussians
 
     Given image I_i represented as
@@ -165,7 +167,7 @@ def do_em(I, X, n_gaussian=1, maxiter=100, tol=1e-04, force_model_center=False, 
             break
 
         # Maximization step
-        means, covars, weights = do_mstep(X, I, responsibilities, force_model_center)
+        means, covars, weights = do_mstep(X, I, dX, responsibilities, force_model_center)
         if logger:
             logger.log(5, 'Step {0}, current log likelihood {1:.4e}'.format(i, log_likelihood[-1]))
             for indx in range(n_gaussian):
@@ -289,10 +291,28 @@ class GaussianMixtureModel(Model):
         tol = self.kwargs['tol']
         force_model_center = self.kwargs['force_model_center']
 
-        I, wt, u, v = star.data.getDataVector()
+        I, wt, u, v = star.data.getDataVector(include_zero_weight=True)
+        # calculate dX == area of pixel
+        ny, nx = star.data.image.array.shape
+        ugrid = u.reshape(ny, nx)
+        vgrid = v.reshape(ny, nx)
+        # assume constant pixel size. Could be relaxed
+        du = np.median(np.diff(ugrid, axis=1))
+        dv = np.median(np.diff(vgrid, axis=0))
+        # put into same shape as I for the future in case we want to relax
+        # constant pixel size requirement
+        dX = du * dv * np.ones(I.shape)
+
+        # now include the mask
+        mask = wt != 0.
+        I = I[mask]
+        wt = wt[mask]
+        u = u[mask]
+        v = v[mask]
+        dX = dX[mask]
         X = np.vstack((u, v)).T
 
-        weights, means, covars, logprobs, log_likelihood, responsibilities = do_em(I, X, n_gaussian=n_gaussian, maxiter=maxiter, tol=tol, force_model_center=force_model_center, logger=logger)
+        weights, means, covars, logprobs, log_likelihood, responsibilities = do_em(I, X, dX, n_gaussian=n_gaussian, maxiter=maxiter, tol=tol, force_model_center=force_model_center, logger=logger)
         shapes = self._convert_covars_to_shapes(covars)
 
         # create params

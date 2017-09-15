@@ -66,7 +66,7 @@ def test_single():
         logger = piff.config.setup_logger(verbose=1)
     # make single gaussian centered on 0
     params = np.array([.5, 0.8, 0.02, -0.02])
-    star = make_data(params, n_gaussian=1, force_model_center=True)
+    star = make_data(params, n_gaussian=1, flux=10, force_model_center=True)
     model = piff.GaussianMixtureModel(n_gaussian=1, force_model_center=True)
     # fit it
     star_model = model.fit(star, logger=logger)
