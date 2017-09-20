@@ -350,7 +350,7 @@ class OpticalWavefrontPSF(PSF):
 
         # put in the variable names and initial values
         self.fitter_kwargs = {
-            'r0': 0.15, 'fix_r0': False,   'limit_r0': (0.01, 0.5), 'error_r0': 1e-2,
+            'r0': 0.15, 'fix_r0': False,   'limit_r0': (0.05, 0.4), 'error_r0': 1e-2,
             'g1': 0,   'fix_g1': False,   'limit_g1': (-0.2, 0.2),  'error_g1': 1e-2,
             'g2': 0,   'fix_g2': False,   'limit_g2': (-0.2, 0.2),  'error_g2': 1e-2,
             }

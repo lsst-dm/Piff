@@ -84,12 +84,18 @@ class SingleChipPSF(PSF):
         self.pointing = pointing
         self.psf_by_chip = {}
         for chipnum in wcs:
+            stars_chip = [ s for s in stars if s['chipnum'] == chipnum ]
+            if len(stars_chip) == 0:
+                if logger:
+                    logger.warning("Because we have no stars for chip %s, we skip it!!",
+                                   chipnum)
+                continue
+
             # Make a copy of single_psf for each chip
             psf_chip = copy.deepcopy(self.single_psf)
             self.psf_by_chip[chipnum] = psf_chip
 
             # Break the list of stars up into a list for each chip
-            stars_chip = [ s for s in stars if s['chipnum'] == chipnum ]
             wcs_chip = { chipnum : wcs[chipnum] }
 
             # Run the psf_chip fit function using this stars and wcs (and the same pointing)
@@ -112,6 +118,16 @@ class SingleChipPSF(PSF):
             raise ValueError("SingleChip drawStar requires the star to have a chipnum property")
         chipnum = star['chipnum']
         return self.psf_by_chip[chipnum].drawStar(star)
+
+    def drawStarList(self, stars):
+        """Generate PSF images for given stars.
+
+        :param stars:       List of Star instances holding information needed for interpolation as
+                            well as an image/WCS into which PSF will be rendered.
+
+        :returns:           List of Star instances with its image filled with rendered PSF
+        """
+        return [self.drawStar(star) for star in stars]
 
     def getParams(self, star):
         """Get params for a given star.
