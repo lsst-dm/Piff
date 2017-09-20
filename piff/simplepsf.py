@@ -154,6 +154,7 @@ class SimplePSF(PSF):
 
             nremoved = 0
             new_stars = []
+            logger.info("             Fitting star models")
             for si, s in enumerate(self.stars):
                 try:
                     new_star = fit_fn(s, logger=logger)
@@ -166,11 +167,11 @@ class SimplePSF(PSF):
                     new_stars.append(new_star)
             self.stars = new_stars
 
-            logger.debug("             Calculating the interpolation")
+            logger.info("             Calculating the interpolation")
             self.interp.solve(self.stars, logger=logger)
 
             # Refit and recenter all stars, collect stats
-            logger.debug("             Re-fluxing stars")
+            logger.info("             Re-fluxing stars")
 
             if hasattr(self.model, 'reflux'):
                 new_stars = []
@@ -179,6 +180,7 @@ class SimplePSF(PSF):
                     signal = self.drawStar(s)
                     s = s.addPoisson(signal)
 
+                    new_star = self.model.reflux(self.interp.interpolate(s),logger=logger)
                     try:
                         new_star = self.model.reflux(self.interp.interpolate(s),logger=logger)
                     except (KeyboardInterrupt, SystemExit):
@@ -191,15 +193,18 @@ class SimplePSF(PSF):
                         new_stars.append(new_star)
                 self.stars = new_stars
 
-            if self.outliers and (iteration > 0 or not self.interp.degenerate_points):
+            if hasattr(self.interp, 'degenerate_points'):
+                has_degenerate_solver = True
+            else:
+                has_degenerate_solver = False
+            if self.outliers and (iteration > 0 or not has_degenerate_solver):
                 # Perform outlier rejection, but not on first iteration for degenerate solvers.
-                logger.debug("             Looking for outliers")
-                # self.stars, nremoved1 = self.outliers.removeOutliers(self.stars, logger=logger)
+                logger.info("             Looking for outliers")
                 self.stars, nremoved1 = self.outliers.removeOutliers(self.stars, logger=logger)
                 if nremoved1 == 0:
-                    logger.debug("             No outliers found")
+                    logger.info("             No outliers found")
                 else:
-                    logger.info("             Removed %d outliers", nremoved1)
+                    logger.warning("             Removed %d outliers", nremoved1)
                 nremoved += nremoved1
 
             chisq = np.sum([s.fit.chisq for s in self.stars])

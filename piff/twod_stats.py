@@ -19,7 +19,6 @@
 
 from __future__ import print_function
 import numpy as np
-import warnings
 import galsim
 
 from .stats import Stats
@@ -94,8 +93,12 @@ class TwoDHistStats(Stats):
         logger.info("Computing TwoDHist indices")
 
         # fudge the bins by multiplying 1.01 so that the max entries are in the bins
-        self.bins_u = np.linspace(np.min(u), np.max(u) * 1.01, num=self.number_bins_u)
-        self.bins_v = np.linspace(np.min(v), np.max(v) * 1.01, num=self.number_bins_v)
+        min_u = np.nanmin(u) * 0.99
+        max_u = np.nanmax(u) * 1.01
+        self.bins_u = np.linspace(min_u, max_u, self.number_bins_u)
+        min_v = np.nanmin(v) * 0.99
+        max_v = np.nanmax(v) * 1.01
+        self.bins_v = np.linspace(min_v, max_v, self.number_bins_v)
 
         # digitize u and v. No such thing as entries below their min, so -1 to index
         indx_u = np.digitize(u, self.bins_u) - 1
@@ -277,6 +280,9 @@ class TwoDHistStats(Stats):
 
         for unique in unique_indx:
             ui, vi = unique
+            shape = C.shape
+            if ui >= shape[1] or vi >= shape[0] or ui < 0 or vi < 0:
+                continue
 
             sample = z[(indx_u == ui) & (indx_v == vi)]
             if len(sample) > 0:
@@ -431,13 +437,10 @@ class WhiskerStats(Stats):
         # define terms for the catalogs
         u = positions[mask, 0]
         v = positions[mask, 1]
-        T = shapes_truth[mask, 3]
         g1 = shapes_truth[mask, 4]
         g2 = shapes_truth[mask, 5]
-        T_model = shapes_model[mask, 3]
         g1_model = shapes_model[mask, 4]
         g2_model = shapes_model[mask, 5]
-        dT = T - T_model
         dg1 = g1 - g1_model
         dg2 = g2 - g2_model
 
@@ -458,8 +461,12 @@ class WhiskerStats(Stats):
         logger.info("Computing TwoDHist indices")
 
         # fudge the bins by multiplying 1.01 so that the max entries are in the bins
-        self.bins_u = np.linspace(np.min(u), np.max(u) * 1.01, num=self.number_bins_u)
-        self.bins_v = np.linspace(np.min(v), np.max(v) * 1.01, num=self.number_bins_v)
+        min_u = np.nanmin(u) * 0.99
+        max_u = np.nanmax(u) * 1.01
+        self.bins_u = np.linspace(min_u, max_u, self.number_bins_u)
+        min_v = np.nanmin(v) * 0.99
+        max_v = np.nanmax(v) * 1.01
+        self.bins_v = np.linspace(min_v, max_v, self.number_bins_v)
 
         # digitize u and v. No such thing as entries below their min, so -1 to index
         indx_u = np.digitize(u, self.bins_u) - 1

@@ -378,6 +378,18 @@ class PixelGrid(Model):
 
         :returns: a new Star instance with updated StarFit
         """
+        logger = galsim.config.LoggerWrapper(logger)
+        logger.debug("Chisq for star:")
+        logger.debug("    flux = %s",star.fit.flux)
+        logger.debug("    center = %s",star.fit.center)
+        logger.log(5, "    props = %s",star.data.properties)
+        logger.log(5, "    image = %s",star.data.image)
+        logger.debug("    image center = %s",star.data.image(star.data.image.center()))
+        logger.debug("    weight center = %s",star.data.weight(star.data.weight.center()))
+        try:
+            logger.debug("    fit params size = %s",len(star.fit.params))
+        except:
+            pass
 
         # Start by getting all interpolation coefficients for all observed points
         data, weight, u, v = star.data.getDataVector(include_zero_weight=False)
@@ -394,8 +406,12 @@ class PixelGrid(Model):
             weight *= star_pix_area*star_pix_area
 
         # Subtract star.fit.center from u, v:
-        u -= star.fit.center[0]
-        v -= star.fit.center[1]
+        if hasattr(star.fit.center, 'x'):
+            u -= star.fit.center.x
+            v -= star.fit.center.y
+        else:
+            u -= star.fit.center[0]
+            v -= star.fit.center[1]
 
         if self._force_model_center:
             coeffs, dcdu, dcdv, psfx, psfy = self.interp.derivatives(u/self.du, v/self.du)
@@ -420,7 +436,8 @@ class PixelGrid(Model):
         pvals = self._fullPsf1d(star)[index1d]
 
         if self._force_interpolated_image or 'other_model' in star.data.properties:
-            prof = self.getProfile(star, include_zero_weight=False)
+            # profiles here assume flux normalized
+            prof = self.getProfile(star, include_zero_weight=False) / star.fit.flux
             if 'other_model' in star.data.properties:
                 prof = galsim.Convolve([star.data.properties['other_model'], prof])
             model_image = galsim.Image(star.image, dtype=float)
@@ -550,10 +567,15 @@ class PixelGrid(Model):
         image, _, image_pos = star_temp.data.getImage()
 
         # TODO: I do not understand this
+        flux = star.fit.flux
         if not star.data.values_are_sb:
-            image *= 1. / star.data.pixel_area
+            flux = flux * 1. / star.data.pixel_area
 
-        prof = galsim.InterpolatedImage(image).shift(star.fit.center) * star.fit.flux
+        image_flux = image.array.sum()
+        if image_flux == 0:
+            # add a little sumpin sumpin
+            image += 1e-7
+        prof = galsim.InterpolatedImage(image).shift(star.fit.center) * flux
         return prof
 
     def draw(self, star, include_zero_weight=True):
@@ -568,8 +590,12 @@ class PixelGrid(Model):
         # Start by getting all interpolation coefficients for all observed points
         data, weight, u, v = star.data.getDataVector(include_zero_weight=include_zero_weight)
         # Subtract star.fit.center from u, v
-        u -= star.fit.center[0]
-        v -= star.fit.center[1]
+        if hasattr(star.fit.center, 'x'):
+            u -= star.fit.center.x
+            v -= star.fit.center.y
+        else:
+            u -= star.fit.center[0]
+            v -= star.fit.center[1]
 
         coeffs, psfx, psfy = self.interp(u/self.du, v/self.du)
         # Turn the (psfy,psfx) coordinates into an index into 1d parameter vector.
@@ -605,12 +631,14 @@ class PixelGrid(Model):
         logger.debug("Reflux for star:")
         logger.debug("    flux = %s",star.fit.flux)
         logger.debug("    center = %s",star.fit.center)
-        logger.debug("    props = %s",star.data.properties)
-        logger.debug("    image = %s",star.data.image)
-        #logger.debug("    image = %s",star.data.image.array)
-        #logger.debug("    weight = %s",star.data.weight.array)
+        logger.log(5, "    props = %s",star.data.properties)
+        logger.log(5, "    image = %s",star.data.image)
         logger.debug("    image center = %s",star.data.image(star.data.image.center()))
         logger.debug("    weight center = %s",star.data.weight(star.data.weight.center()))
+        try:
+            logger.debug("    fit params size = %s",len(star.fit.params))
+        except:
+            pass
 
         # This will be an iterative process if the centroid is free.
         max_iterations = 100    # Max iteration count
@@ -630,8 +658,12 @@ class PixelGrid(Model):
                 star_pix_area = star.data.pixel_area
                 data /= star_pix_area
                 weight *= star_pix_area*star_pix_area
-            u -= center[0]
-            v -= center[1]
+            if hasattr(center, 'x'):
+                u -= center.x
+                v -= center.y
+            else:
+                u -= center[0]
+                v -= center[1]
             if do_center:
                 coeffs, dcdu, dcdv, psfx, psfy = self.interp.derivatives(u/self.du, v/self.du)
                 dcdu /= self.du
@@ -655,7 +687,8 @@ class PixelGrid(Model):
 
             # TODO: redundant code with fit
             if self._force_interpolated_image or 'other_model' in star.data.properties:
-                prof = self.getProfile(star, include_zero_weight=False)
+                # profiles here assume flux normalized
+                prof = self.getProfile(star, include_zero_weight=False) / star.fit.flux
                 if 'other_model' in star.data.properties:
                     prof = galsim.Convolve([star.data.properties['other_model'], prof])
                 model_image = galsim.Image(star.image, dtype=float)
@@ -711,8 +744,13 @@ class PixelGrid(Model):
             ###print(iteration,'chisq',chisq,flux,center,df) ###
             logger.debug("center = %s",center)
             if do_center:
-                center = (center[0]+df[1],
-                          center[1]+df[2])
+                if hasattr(center, 'x'):
+                    # is probably a galsim PositionD or somesuch
+                    center = (center.x+df[1],
+                              center.y+df[2])
+                else:
+                    center = (center[0]+df[1],
+                              center[1]+df[2])
                 logger.debug("center += (%s,%s) => %s",df[1],df[2],center)
             dof = np.count_nonzero(weight) - self._constraints
             logger.debug("dchi, chisq_thresh, dof, do_center = %s, %s, %s, %s",
