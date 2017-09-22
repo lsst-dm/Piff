@@ -886,8 +886,8 @@ class StarFit(object):
     The params and alpha,beta,chisq are assumed to be marginalized over flux (and over center,
     if it is free to vary).
     """
-    def __init__(self, params, flux=1., center=(0.,0.), alpha=None, beta=None, chisq=None, dof=None,
-                 worst_chisq=None):
+    def __init__(self, params, flux=1., center=(0.,0.), params_cov=None, alpha=None, beta=None,
+                 chisq=None, dof=None, worst_chisq=None):
         """Constructor for base version of StarFit
 
         :param params: A 1d numpy array holding estimated PSF parameters
@@ -906,6 +906,7 @@ class StarFit(object):
             pass
 
         self.params = params
+        self.params_cov = params_cov
         self.flux = flux
         self.center = center
         self.alpha = alpha
