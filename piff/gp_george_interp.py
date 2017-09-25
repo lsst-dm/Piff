@@ -112,7 +112,7 @@ class GPGeorgeInterp(Interp):
             raise RuntimeError("Failed to evaluate kernel string {0!r}".format(kernel))
         return k
 
-    def _fit(self, gp, X, y, logger=None):
+    def _fit(self, gp, X, y, y_err=None, logger=None):
         """Update the GaussianProcessRegressor with data
 
         :param gp:      The GaussianProcessRegressor to update.
@@ -124,7 +124,10 @@ class GPGeorgeInterp(Interp):
             logger.debug('Start GPGeorgeInterp _fit: %s',gp.kernel)
             logger.debug('gp.fit with mean y = %s',np.mean(y))
 
-        gp.compute(X, np.zeros(len(y)))
+        if y_err is None:
+            gp.compute(X, np.zeros(len(y)))
+        else:
+            gp.compute(X, y_err)
 
         if self.optimizer:
             self.count +=1
@@ -192,6 +195,8 @@ class GPGeorgeInterp(Interp):
         """
         X = np.array([self.getProperties(star) for star in stars])
         y = np.array([star.fit.params for star in stars])
+        y_err = np.array([np.sqrt(np.diag(star.fit.params_cov)) for star in stars])
+
         if logger:
             logger.debug('Start solve: y = %s',y)
         if self.npca > 0:
@@ -204,6 +209,7 @@ class GPGeorgeInterp(Interp):
         # Save these so serialization can reinstall them into gp.
         self._X = X
         self._y = y
+        self._y_err = y_err
         if self.normalize:
             self._mean = np.mean(y,axis=0)
         else:
@@ -212,7 +218,7 @@ class GPGeorgeInterp(Interp):
         for i in range(self.nparams):
             gp = self.gps[i]
             self._init_theta.append(gp.get_parameter_vector())
-            self._fit(self.gps[i], X, y[:,i]-self._mean[i], logger=logger)
+            self._fit(self.gps[i], X, y[:,i]-self._mean[i], y_err=y_err[:,i], logger=logger)
             if logger:
                 logger.info('param %d: %s',i,gp.kernel_)
 
@@ -259,13 +265,15 @@ class GPGeorgeInterp(Interp):
         dtypes = [('INIT_THETA', init_theta.dtype, init_theta.shape),
                   ('FIT_THETA', fit_theta.dtype, fit_theta.shape),
                   ('X', self._X.dtype, self._X.shape),
-                  ('Y', self._y.dtype, self._y.shape)]
+                  ('Y', self._y.dtype, self._y.shape),
+                  ('Y_ERR', self._y_err.dtype, self._y_err.shape)]
 
         data = np.empty(1, dtype=dtypes)
         data['INIT_THETA'] = init_theta
         data['FIT_THETA'] = fit_theta
         data['X'] = self._X
         data['Y'] = self._y
+        data['Y_ERR'] = self._y_err
 
         fits.write_table(data, extname=extname+'_kernel')
 
@@ -278,6 +286,7 @@ class GPGeorgeInterp(Interp):
 
         self._X = np.atleast_1d(data['X'][0])
         self._y = np.atleast_1d(data['Y'][0])
+        self._y_err = np.atleast_1d(data['Y_ERR'][0])
         self._init_theta = init_theta
         self.nparams = len(init_theta)
         if self.normalize:
@@ -290,8 +299,7 @@ class GPGeorgeInterp(Interp):
             gp = self.gps[i]
             gp.set_parameter_vector(fit_theta[i])
             self.optimizer = False
-            self._fit(gp, self._X, self._y[:,i]-self._mean[i])
-            self._solve
+            self._fit(gp, self._X, self._y[:,i]-self._mean[i], y_err=self._y_err[:,i])
             self.optimizer = self._optimizer_init 
             # Now that gp is setup, we can restore it's initial kernel.
 
