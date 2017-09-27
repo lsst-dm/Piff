@@ -148,7 +148,7 @@ class GPGeorgeInterp(Interp):
                 self.optimizer = False
                 self.count = 0
         if logger:
-            logger.debug('After fit: kernel = %s',gp.kernel_)
+            logger.debug('After fit: kernel = %s',gp.kernel)
 
     def _predict(self, Xstar):
         """ Predict responses given covariates.
@@ -220,7 +220,7 @@ class GPGeorgeInterp(Interp):
             self._init_theta.append(gp.get_parameter_vector())
             self._fit(self.gps[i], X, y[:,i]-self._mean[i], y_err=y_err[:,i], logger=logger)
             if logger:
-                logger.info('param %d: %s',i,gp.kernel_)
+                logger.info('param %d: %s',i,gp.kernel)
 
     def interpolate(self, star, logger=None):
         """Perform the interpolation to find the interpolated parameter vector at some position.
