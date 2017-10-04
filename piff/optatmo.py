@@ -281,7 +281,7 @@ class OpticalWavefrontPSF(PSF):
         Constant optical sigma or kolmogorov, g1, g2 in model
         misalignments in interpolant: these are the interp.misalignment terms
     """
-    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', guess_start=False, use_gradient=True, logger=None):
+    def __init__(self, knn_file_name, knn_extname, max_iterations=300, n_fit_stars=0, error_estimate=0.001, pupil_plane_im=None,  extra_interp_properties=None, weights=np.array([0.5, 1, 1]), max_shapes=np.array([1e10, 1e10, 1e10]), fitter_kwargs={}, interp_kwargs={}, model_kwargs={}, engine='galsim_fast', template='des', fitter_algorithm='minuit', guess_start=False, use_gradient=True, min_snr=0, logger=None):
         """
 
         :param knn_file_name:               Fits file containing the wavefront
@@ -300,6 +300,7 @@ class OpticalWavefrontPSF(PSF):
         :param fitter_algorithm:            fitter to use for measuring wavefront. Default is minuit but also can use lmfit
         :param guess_start:                 if True, will adjust fitter kwargs for best guess
         :param use_gradient:                if True, will use gradient functions in fit
+        :param min_snr:                     minimum snr from star property required for fit
         """
 
         # TODO: trying with distance weighting to 40 nearest neighbors
@@ -339,6 +340,7 @@ class OpticalWavefrontPSF(PSF):
             'engine': engine,
             'guess_start': guess_start,
             'use_gradient': use_gradient,
+            'min_snr': min_snr,
             }
 
         # load up the model after kwargs are set
@@ -584,10 +586,14 @@ class OpticalWavefrontPSF(PSF):
             logger.warning("Start measuring the shapes")
         self._shapes = self._measure_shapes(self._fit_stars, logger=logger)
         self._errors = self._measure_shape_errors(self._fit_stars, logger=logger)
+        # accumulate snrs
+        snrs = np.array([star.data.properties['snr'] for star in self._fit_stars])
         # cut more stars if they fail shape measurement or error measurement, or if their shape values exceed a cut
+
         indx = ~np.any((self._shapes != self._shapes) +
                        (self._errors != self._errors) +
-                       (np.abs(self._shapes) > self.max_shapes)
+                       (np.abs(self._shapes) > self.max_shapes) +
+                       (snrs < self.kwargs['min_snr'])[:, np.newaxis]
                        , axis=1)
         if logger:
             logger.warning("Cutting {0} stars out of {1}".format(sum(~indx), len(indx)))
@@ -674,7 +680,7 @@ class OpticalWavefrontPSF(PSF):
     @staticmethod
     def _analytic_misalign_zernikes(zernikes, fx, fy, *vals):
         """Given zernikes, positions, and misalignment vector, misalign zernikes"""
-
+    
         r0 = vals[0]
         g1 = vals[1]
         g2 = vals[2]
@@ -682,7 +688,7 @@ class OpticalWavefrontPSF(PSF):
         misalignments = np.array(vals[3:])
         # stack r0
         params = np.hstack((r0 * ones, g1 * ones, g2 * ones, zernikes))
-
+    
         # apply misalignment
         misalignment_arr = misalignments.reshape(8, 3)
         params[:, 3:] = params[:, 3:] + misalignment_arr[:, 0] + fx[:, None] * misalignment_arr[:, 2] + fy[:, None] * misalignment_arr[:, 1]
@@ -1495,10 +1501,10 @@ class OpticalWavefrontPSF(PSF):
                 stencil_values = np.array([0.5, -0.5])
                 stencil_chi2_l = np.array(stencil_chi2_l)  # (n_stencil, Nstar, Nshapes)
                 stencils.append(stencil_chi2_l)
-                gradients_l.append(np.sum(stencil_values[:, None, None] * stencil_chi2_l, axis=0) / step_size)
+                gradients_l.append(np.sum(stencil_values[:, None, None] * stencil_chi2_l, axis=0) / step_size)  # (Nstar, Nshapes)
 
         stencils = np.array(stencils)
-        gradients_l = np.array(gradients_l)
+        gradients_l = np.array(gradients_l)  # (Nvar, Nstar, Nshapes)
         # convert gradients_l into gradients
         # recall that reduced_chi2 = np.sum(self.weights * np.sum(chi2_l[indx], axis=0)) * 1. / sum(indx) / np.sum(self.weights)
         # reduced_gradients = np.sum(self.weights[None] * np.nansum(gradients_l, axis=1), axis=1) * 1. / len(stars) / np.sum(self.weights)
@@ -1616,6 +1622,16 @@ class OpticalWavefrontPSF(PSF):
         # Interpolate parameters to this position/properties:
         star = self.interp.interpolate(star)
         # Render the image
+
+        # TODO: check that this works
+        # model_star = self.model.draw(star)
+        # # modify flux and fits
+        # hsm_star = hsm(star)
+        # hsm_model = hsm(model_star)
+        # model_star.fit.flux = model_star.fit.flux + hsm_star[0] - hsm_model[0]
+        # model_star.fit.center = model_star.fit.center[0] + (hsm_star[1] - hsm_model[1]), model_star.fit.center[1] + (hsm_star[2] - hsm_model[2])
+        # star = self.model.draw(model_star)
+
         star = self.model.draw(star)
         return star
 

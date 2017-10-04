@@ -101,6 +101,7 @@ from .psf import PSF, read
 from .simplepsf import SimplePSF
 from .singlechip import SingleChipPSF
 from .optatmo import OptAtmoPSF, OpticalWavefrontPSF
+from .zernike_wavefront import ZernikeOpticalWavefrontPSF
 
 # Stats classes are named BlahStats where Blah is what they are called in the config file
 from .stats import Stats, RhoStats, ShapeHistogramsStats
