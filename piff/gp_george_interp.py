@@ -39,9 +39,6 @@ class GPGeorgeInterp(Interp):
                         custom piff AnisotropicRBF or ExplicitKernel object.  [default: 'RBF()']
     :param optimize:    Boolean indicating whether or not to try and optimize the kernel by
                         maximizing the marginal likelihood.  [default: True]
-    :param optimize_frac:  Optional fraction of stars to use during optimization of hyperparameters.
-                        Setting this below 1.0 may significantly speed up the optimization step of
-                        this code.  [default: 1.0]
     :param n_restarts_optimizer:  Number of times to restart optimization to search for better
                         hyperparameters.  See scikit-learn docs for more details.  Note that value
                         of 0 implies one optimization iteration is performed.  [default: 0]
@@ -52,14 +49,10 @@ class GPGeorgeInterp(Interp):
     :param logger:      A logger object for logging debug info. [default: None]
     """
     def __init__(self, keys=('u','v'), kernel="ExpSquaredKernel(metric=[[1., 0.], [0., 1.]], ndim=2)",
-                 white_noise=None,optimize=True, optimize_frac=1.,
-                 n_restarts_optimizer=0,
+                 white_noise=None,optimize=True, n_restarts_optimizer=0,
                  normalize=True, logger=None):
-        if optimize_frac < 0 or optimize_frac > 1:
-            raise ValueError("optimize_frac must be between 0 and 1")
         self.keys = keys
         self.kernel = kernel
-        self.optimize_frac = optimize_frac
         self.n_restarts_optimizer = n_restarts_optimizer
         self.degenerate_points = False
         self.normalize = normalize
@@ -73,14 +66,21 @@ class GPGeorgeInterp(Interp):
             'keys': keys,
             'kernel': kernel,
             'optimize': optimize,
-            'optimize_frac': optimize_frac,
             'n_restarts_optimizer': n_restarts_optimizer
         }
         self.count = 0
         self.optimizer = optimize
         self._optimizer_init = copy.deepcopy(optimize)
-        self.gp_template = george.GP(self._eval_kernel(self.kernel),
-                                     white_noise=self.white_noise)
+
+        if type(kernel) is str:
+            self.gp_template = [george.GP(self._eval_kernel(self.kernel),
+                                          white_noise=self.white_noise)]
+        else:
+            if type(kernel) is not list:
+                raise TypeError("kernel should be a string or a list of string")
+            else:
+                self.gp_template = [george.GP(self._eval_kernel(ker),
+                                              white_noise=self.white_noise) for ker in self.kernel] 
 
     @staticmethod
     def _eval_kernel(kernel):
@@ -126,26 +126,47 @@ class GPGeorgeInterp(Interp):
             gp.compute(X, y_err)
 
         if self.optimizer:
-            self.count +=1
-            def nll(p):
-                gp.set_parameter_vector(p)
-                ll = gp.log_likelihood(y, quiet=True)
-                return -ll if np.isfinite(ll) else 1e25
+            #self.count +=1
+            #def nll(p):
+            #    gp.set_parameter_vector(p)
+            #    ll = gp.log_likelihood(y, quiet=True)
+            #    return -ll if np.isfinite(ll) else 1e25
 
-            def grad_nll(p):
-                gp.set_parameter_vector(p)
-                return -gp.grad_log_likelihood(y, quiet=True)
+            #def grad_nll(p):
+            #    gp.set_parameter_vector(p)
+            #    return -gp.grad_log_likelihood(y, quiet=True)
 
-            p0 = gp.get_parameter_vector()
-            results = op.minimize(nll, p0, jac=grad_nll, method="L-BFGS-B")
-            gp.set_parameter_vector(results['x'])
+            #p0 = gp.get_parameter_vector()
+            #results = op.minimize(nll, p0, jac=grad_nll, method="L-BFGS-B")
+            #gp.set_parameter_vector(results['x'])
 
-            if self.nparams == self.count:
-                self.optimizer = False
-                self.count = 0
+            #if self.nparams == self.count:
+            #    self.optimizer = False
+            #    self.count = 0
+            self._optimizer_max_likelihood(gp,y)
+
         if logger:
             logger.debug('After fit: kernel = %s',gp.kernel)
 
+    def _optimizer_max_likelihood(self,gp,y):
+        self.count +=1
+        def nll(p):
+            gp.set_parameter_vector(p)
+            ll = gp.log_likelihood(y, quiet=True)
+            return -ll if np.isfinite(ll) else 1e25
+
+        def grad_nll(p):
+            gp.set_parameter_vector(p)
+            return -gp.grad_log_likelihood(y, quiet=True)
+
+        p0 = gp.get_parameter_vector()
+        results = op.minimize(nll, p0, jac=grad_nll, method="L-BFGS-B")
+        gp.set_parameter_vector(results['x'])
+
+        if self.nparams == self.count:
+            self.optimizer = False
+            self.count = 0            
+            
     def _predict(self, Xstar):
         """ Predict responses given covariates.
         :param X:  The independent covariates at which to interpolate.  (n_samples, n_features).
@@ -176,7 +197,14 @@ class GPGeorgeInterp(Interp):
         :param logger:  A logger object for logging debug info. [default: None]
         """
         self.nparams = len(stars[0].fit.params)
-        self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)]
+        if len(self.gp_template)==1:
+            self.gps = [copy.deepcopy(self.gp_template[0]) for i in range(self.nparams)]
+        else:
+            if len(self.gp_template)!= self.nparams:
+                raise ValueError("numbers of kernel provided should be 1 (same for all parameters) or " \
+                "equal to the number of params (%i), number kernel provided: %i"%((self.nparams,len(self.gp_template))))
+            else:
+                self.gps = [copy.deepcopy(gps) for gps in self.gp_template]
         return stars
 
     def solve(self, stars, logger=None):
@@ -278,7 +306,14 @@ class GPGeorgeInterp(Interp):
             self._mean = np.mean(self._y,axis=0)
         else:
             self._mean = np.zeros(self.nparams)
-        self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)]
+        if len(self.gp_template)==1:
+            self.gps = [copy.deepcopy(self.gp_template[0]) for i in range(self.nparams)]
+        else:
+            if len(self.gp_template)!= self.nparams:
+                raise ValueError("numbers of kernel provided should be 1 (same for all parameters) or " \
+                "equal to the number of params (%i), number kernel provided: %i"%((self.nparams,len(self.gp_template))))
+            else:
+                self.gps = [copy.deepcopy(gps) for gps in self.gp_template]
         #print self._mean
         for i in range(self.nparams):
             gp = self.gps[i]
