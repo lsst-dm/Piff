@@ -461,13 +461,13 @@ def validate(validate_stars, interp):
             plt.show()
 
 def check_gp(training_data, validation_data, visualization_data,
-             kernel, npca=0, white_noise=None, optimize=False,
+             kernel, white_noise=None, optimize=False,
              file_name=None, rng=None, visualize=False, check_config=False):
     """ Solve for global PSF model, test it, and optionally display it.
     """
     stars = params_to_stars(training_data, noise=0.03, rng=rng)
     validate_stars = params_to_stars(validation_data, noise=0.0, rng=rng)
-    interp = piff.GPGeorgeInterp(kernel=kernel, optimize=optimize, npca=npca, white_noise=white_noise)
+    interp = piff.GPGeorgeInterp(kernel=kernel, optimize=optimize, white_noise=white_noise)
     interp.initialize(stars)
     iterate(stars, interp)
     if visualize:
@@ -479,7 +479,6 @@ def check_gp(training_data, validation_data, visualization_data,
             'interp' : {
                 'type' : 'GPGeorgeInterp',
                 'kernel' : kernel,
-                'npca' : npca,
                 'white_noise':1e-5,
                 'optimize' : optimize
             }
@@ -529,16 +528,13 @@ def test_constant_psf():
     #kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
 
     if __name__ == '__main__':
-        npcas = [0, 2]
         optimizes = [True, False]
     else:
-        npcas = [0]
         optimizes = [False]
 
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel,visualize=True,
-                     npca=npca, white_noise=1e-5, optimize=optimize, rng=rng, check_config=True)
+    for optimize in optimizes:
+        check_gp(training_data, validation_data, visualization_data, kernel,visualize=True,
+                 white_noise=1e-5, optimize=optimize, rng=rng, check_config=True)
 
 
 @timer
@@ -553,16 +549,13 @@ def test_polynomial_psf():
     #kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
 
     if __name__ == '__main__':
-        npcas = [0, 2]
         optimizes = [True, False]
     else:
-        npcas = [0]
         optimizes = [True]
 
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel,visualize=True,
-                     npca=npca, optimize=optimize, rng=rng)
+    for optimize in optimizes:
+        check_gp(training_data, validation_data, visualization_data, kernel,visualize=True,
+                 optimize=optimize, rng=rng)
 
 
 @timer
@@ -575,34 +568,28 @@ def test_grf_psf():
     kernel = "0.05 * ExpSquaredKernel(metric=0.3**2, ndim=2)"
     
     if __name__ == '__main__':
-        npcas = [0, 5]
         optimizes = [True, False]
         check_config = True
     else:
-        npcas = [0]
         optimizes = [False]
         check_config = False
 
-    for npca in npcas:
-        for optimize in optimizes:
-            # We probably aren't measuring fwhm, g1, g2, etc. to better than 1e-5, so add that amount of
-            # white noise
-            print('INFO POUR PF: ',npca, optimize)
-            check_gp(training_data, validation_data, visualization_data, kernel,
-                     npca=npca, white_noise=1e-5,optimize=optimize,visualize=True,
-                     file_name="test_gp_grf.fits", rng=rng, check_config=check_config)
+    for optimize in optimizes:
+        # We probably aren't measuring fwhm, g1, g2, etc. to better than 1e-5, so add that amount of
+        # white noise
+        print('INFO POUR PF: ', optimize)
+        check_gp(training_data, validation_data, visualization_data, kernel,
+                 white_noise=1e-5,optimize=optimize,visualize=True,
+                 file_name="test_gp_grf.fits", rng=rng, check_config=check_config)
 
 
     # Try out an AnisotropicRBF on the isotropic data too.
-    kernel = "1*AnisotropicRBF(scale_length=[0.3, 0.3])"
-    kernel += " + WhiteKernel(1e-5)"
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel,
-                     npca=npca, white_noise=1e-5, optimize=optimize,
-                     file_name="test_aniso_isotropic_grf.fits", rng=rng,
-                     check_config=check_config)
-
+    kernel = "0.05 * ExpSquaredKernel(metric=[[0.3**2,0],[0,0.3**2]], ndim=2)"
+    for optimize in optimizes:
+        check_gp(training_data, validation_data, visualization_data, kernel,
+                 white_noise=1e-5, optimize=optimize,
+                 file_name="test_aniso_isotropic_grf.fits", rng=rng,
+                 check_config=check_config)
 
 @timer
 def test_anisotropic_rbf_kernel():
@@ -623,19 +610,16 @@ def test_anisotropic_rbf_kernel():
     print(kernel)
 
     if __name__ == '__main__':
-        npcas = [0, 5]
         optimizes = [True, False]
         check_config = True
     else:
-        npcas = [0]
         optimizes = [False]
         check_config = False
 
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel,
-                     npca=npca, white_noise=1e-5,optimize=optimize,
-                     file_name="test_anisotropic_rbf.fits", rng=rng, check_config=check_config)
+    for optimize in optimizes:
+        check_gp(training_data, validation_data, visualization_data, kernel,
+                 white_noise=1e-5,optimize=optimize,
+                 file_name="test_anisotropic_rbf.fits", rng=rng, check_config=check_config)
 
 
 @timer
@@ -802,9 +786,9 @@ if __name__ == '__main__':
     # pr = cProfile.Profile()
     # pr.enable()
 
-    #test_constant_psf() #--> DONE and pass the test
-    #test_polynomial_psf() #--> DONE and pass the test
-    test_grf_psf()
+    test_constant_psf() #--> DONE and pass the test
+    test_polynomial_psf() #--> DONE and pass the test
+    test_grf_psf() #--> DONE and pass the test 
 
     
     #test_anisotropic_rbf_kernel()
@@ -817,36 +801,37 @@ if __name__ == '__main__':
     # pr.disable()
     # ps = pstats.Stats(pr).sort_stats('tottime')
     # ps.print_stats(25)
-    import pylab as P 
 
-    rng = galsim.BaseDeviate(987654334587656)
-    ntrain, nvalidate, nvisualize = 100, 1, 21
-    training_data, validation_data, visualization_data = make_grf_psf_params(ntrain, nvalidate, nvisualize)
+    ##import pylab as P 
 
-    kernel = "0.05 * ExpSquaredKernel(metric=0.3**2, ndim=2)"
+    ##rng = galsim.BaseDeviate(987654334587656)
+    ##ntrain, nvalidate, nvisualize = 100, 1, 21
+    ##training_data, validation_data, visualization_data = make_grf_psf_params(ntrain, nvalidate, nvisualize)
+
+    ##kernel = "0.05 * ExpSquaredKernel(metric=0.3**2, ndim=2)"
     
-    stars = params_to_stars(training_data, noise=0.03, rng=rng)
-    validate_stars = params_to_stars(validation_data, noise=0.0, rng=rng)
-    interp = piff.GPGeorgeInterp(kernel=kernel, optimize=False, npca=0, white_noise=1e-5)
-    interp.initialize(stars)
-    iterate(stars, interp)
+    ##stars = params_to_stars(training_data, noise=0.03, rng=rng)
+    ##validate_stars = params_to_stars(validation_data, noise=0.0, rng=rng)
+    ##interp = piff.GPGeorgeInterp(kernel=kernel, optimize=False, white_noise=1e-5)
+    ##interp.initialize(stars)
+    ##iterate(stars, interp)
 
-    interpstars = params_to_stars(visualization_data, noise=0.0)
-    interpstars = interp.interpolateList(interpstars)
+    ##interpstars = params_to_stars(visualization_data, noise=0.0)
+    ##interpstars = interp.interpolateList(interpstars)
 
-    cinterp = np.array([s.fit.params[3] for s in interpstars])
+    ##cinterp = np.array([s.fit.params[3] for s in interpstars])
 
-    kernel = "0.05*RBF(0.3, (1e-2, 1e1))"
-    kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
-    interpskl = piff.GPInterp(kernel=kernel, optimize=None, npca=0)
-    interpskl.initialize(stars)
-    from test_gp_interp import iterate as iterate_skl
-    iterate_skl(stars, interpskl)
+    ##kernel = "0.05*RBF(0.3, (1e-2, 1e1))"
+    ##kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
+    ##interpskl = piff.GPInterp(kernel=kernel, optimize=None)
+    ##interpskl.initialize(stars)
+    ##from test_gp_interp import iterate as iterate_skl
+    ##iterate_skl(stars, interpskl)
 
-    interpstars = params_to_stars(visualization_data, noise=0.0)
-    interpstars = interpskl.interpolateList(interpstars)
+    ##interpstars = params_to_stars(visualization_data, noise=0.0)
+    ##interpstars = interpskl.interpolateList(interpstars)
                 
-    cinterpskl = np.array([s.fit.params[3] for s in interpstars])
+    ##cinterpskl = np.array([s.fit.params[3] for s in interpstars])
 
 
 

@@ -45,8 +45,6 @@ class GPGeorgeInterp(Interp):
     :param n_restarts_optimizer:  Number of times to restart optimization to search for better
                         hyperparameters.  See scikit-learn docs for more details.  Note that value
                         of 0 implies one optimization iteration is performed.  [default: 0]
-    :param npca:        Number of principal components to keep.  [default: 0, which means don't
-                        decompose PSF parameters into principle components]
     :param normalize:   Whether to normalize the interpolation parameters to have a mean of 0.
                         Normally, the parameters being interpolated are not mean 0, so you would
                         want this to be True, but if your parameters have an a priori mean of 0,
@@ -55,7 +53,7 @@ class GPGeorgeInterp(Interp):
     """
     def __init__(self, keys=('u','v'), kernel="ExpSquaredKernel(metric=[[1., 0.], [0., 1.]], ndim=2)",
                  white_noise=None,optimize=True, optimize_frac=1.,
-                 n_restarts_optimizer=0, npca=0,
+                 n_restarts_optimizer=0,
                  normalize=True, logger=None):
         if optimize_frac < 0 or optimize_frac > 1:
             raise ValueError("optimize_frac must be between 0 and 1")
@@ -63,7 +61,6 @@ class GPGeorgeInterp(Interp):
         self.kernel = kernel
         self.optimize_frac = optimize_frac
         self.n_restarts_optimizer = n_restarts_optimizer
-        self.npca = npca
         self.degenerate_points = False
         self.normalize = normalize
 
@@ -77,8 +74,7 @@ class GPGeorgeInterp(Interp):
             'kernel': kernel,
             'optimize': optimize,
             'optimize_frac': optimize_frac,
-            'n_restarts_optimizer': n_restarts_optimizer,
-            'npca': npca,
+            'n_restarts_optimizer': n_restarts_optimizer
         }
         self.count = 0
         self.optimizer = optimize
@@ -158,8 +154,6 @@ class GPGeorgeInterp(Interp):
         ystar = np.array([gp.predict(self._y[:,i]-self._mean[i], Xstar, return_cov=False) for i,gp in enumerate(self.gps)]).T
         for i in range(self.nparams):
             ystar[:,i] += self._mean[i]
-        if self.npca > 0:
-            ystar = self._pca.inverse_transform(ystar)
         return ystar
 
     def getProperties(self, star, logger=None):
@@ -182,8 +176,6 @@ class GPGeorgeInterp(Interp):
         :param logger:  A logger object for logging debug info. [default: None]
         """
         self.nparams = len(stars[0].fit.params)
-        if self.npca > 0:
-            self.nparams = self.npca
         self.gps = [copy.deepcopy(self.gp_template) for i in range(self.nparams)]
         return stars
 
@@ -199,13 +191,6 @@ class GPGeorgeInterp(Interp):
 
         if logger:
             logger.debug('Start solve: y = %s',y)
-        if self.npca > 0:
-            from sklearn.decomposition import PCA
-            self._pca = PCA(n_components=self.npca, whiten=True)
-            self._pca.fit(y)
-            y = self._pca.transform(y)
-        if logger:
-            logger.debug('After npca: y = %s',y)
         # Save these so serialization can reinstall them into gp.
         self._X = X
         self._y = y
