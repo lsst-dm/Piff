@@ -20,9 +20,11 @@ import numpy as np
 import copy
 import inspect
 import scipy.optimize as op
+from scipy.spatial.distance import cdist
 
 import george
 import george.kernels as Kernel
+import treecorr
 
 from .interp import Interp
 from .star import Star, StarFit
@@ -49,7 +51,7 @@ class GPGeorgeInterp(Interp):
     :param logger:      A logger object for logging debug info. [default: None]
     """
     def __init__(self, keys=('u','v'), kernel="ExpSquaredKernel(metric=[[1., 0.], [0., 1.]], ndim=2)",
-                 white_noise=None,optimize=True, n_restarts_optimizer=0,
+                 white_noise=None,optimize=True, optimize_pcf=True, n_restarts_optimizer=0,
                  normalize=True, logger=None):
         self.keys = keys
         self.kernel = kernel
@@ -66,10 +68,12 @@ class GPGeorgeInterp(Interp):
             'keys': keys,
             'kernel': kernel,
             'optimize': optimize,
+            'optimize_pcf':optimize_pcf,
             'n_restarts_optimizer': n_restarts_optimizer
         }
         self.count = 0
         self.optimizer = optimize
+        self.optimize_pcf = optimize_pcf
         self._optimizer_init = copy.deepcopy(optimize)
 
         if type(kernel) is str:
@@ -126,29 +130,52 @@ class GPGeorgeInterp(Interp):
             gp.compute(X, y_err)
 
         if self.optimizer:
-            #self.count +=1
-            #def nll(p):
-            #    gp.set_parameter_vector(p)
-            #    ll = gp.log_likelihood(y, quiet=True)
-            #    return -ll if np.isfinite(ll) else 1e25
-
-            #def grad_nll(p):
-            #    gp.set_parameter_vector(p)
-            #    return -gp.grad_log_likelihood(y, quiet=True)
-
-            #p0 = gp.get_parameter_vector()
-            #results = op.minimize(nll, p0, jac=grad_nll, method="L-BFGS-B")
-            #gp.set_parameter_vector(results['x'])
-
-            #if self.nparams == self.count:
-            #    self.optimizer = False
-            #    self.count = 0
-            self._optimizer_max_likelihood(gp,y)
+            if self.optimize_pcf:
+                self._optimizer_2pcf(gp,X,y,y_err)
+            else:
+                self._optimizer_max_likelihood(gp,y)
 
         if logger:
             logger.debug('After fit: kernel = %s',gp.kernel)
 
+    def _optimizer_2pcf(self,gp,X,y,y_err):
+        print "j utilise 2pcf"
+        dist_matrix = cdist(X,X)
+        dist_vector = dist_matrix.ravel()
+        sep_min = np.percentile(dist_vector,1.)
+        sep_max = np.percentile(dist_vector,99.)
+        size_bin = sep_max/10.
+
+        if y_err is None or np.sum(y_err) == 0 :
+            cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=y-np.mean(y))
+        else:
+            cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=y-np.mean(y), w=1./y_err**2)
+        kk = treecorr.KKCorrelation(min_sep=sep_min, max_sep=sep_max, bin_size=size_bin)
+        kk.process(cat)
+
+        distance = np.exp(kk.logr)
+        Coord = np.array([distance,distance]).T
+        print len(distance)
+
+        def kernel(param):
+            gp.set_parameter_vector(param)
+            ker = gp.get_matrix(Coord, x2=np.zeros_like(Coord))
+            pcf = ker[:,0]
+            return pcf
+
+        def chi2(param):
+            residual = kk.xi - kernel(param)
+            return np.sum(residual**2)
+
+        print "start minimization"
+        p0 = gp.get_parameter_vector()
+        results = op.fmin(chi2, p0, disp=False)
+        gp.set_parameter_vector(results)
+        print "I am done"
+
+
     def _optimizer_max_likelihood(self,gp,y):
+        print "j utilise gradient likelihood"
         self.count +=1
         def nll(p):
             gp.set_parameter_vector(p)
