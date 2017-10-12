@@ -75,7 +75,10 @@ class ZernikeOpticalWavefrontPSF(PSF):
         # it turns out this part can also be slow!
         if logger:
             logger.info("Making interp")
-        self.interp = DECamWavefront(knn_file_name, knn_extname, logger=logger, **self.interp_kwargs)
+        if knn_file_name == '':
+            pass
+        else:
+            self.interp = DECamWavefront(knn_file_name, knn_extname, logger=logger, **self.interp_kwargs)
 
         if logger:
             logger.info("Making DECamInfo")
@@ -125,13 +128,16 @@ class ZernikeOpticalWavefrontPSF(PSF):
              ]
         # throw in default zernike parameters
         for zi in range(4, 11):  # do NOT include spherical
-            for dxy in range(1, self.kwargs['max_focal_zernike'] + 1):
+            for dxy in range(1, 10 + 1):
                 zkey = 'zUV{0:02d}_zXY{1:02d}'.format(zi, dxy)
                 self.keys.append(zkey)
                 # initial value
                 self.fitter_kwargs[zkey] = 0
-                # fix
-                self.fitter_kwargs['fix_' + zkey] = False
+                # fix if greater than max focal zernike
+                if dxy > self.kwargs['max_focal_zernike']:
+                    self.fitter_kwargs['fix_' + zkey] = True
+                else:
+                    self.fitter_kwargs['fix_' + zkey] = False
                 # we shall not specify in advance a zernike limit
                 # self.fitter_kwargs['limit_' + zkey] = (-2, 2)
                 # initial guess for error in parameter
@@ -354,6 +360,12 @@ class ZernikeOpticalWavefrontPSF(PSF):
         else:
             raise NotImplementedError('fitter {0} not implemented!'.format(self.kwargs['fitter_algorithm']))
 
+    @classmethod
+    def _empty_zernikes(cls, stars):
+        # put in starfits with empty params
+        empty_params = np.zeros(8)
+        empty_stars = [Star(star.data, StarFit(empty_params)) for star in stars]
+        return empty_stars
 
     def _stars_to_parameters(self, stars, logger=None):
         """Takes in stars and returns their zernikes, u, v, and focal x and focal y coordinates.
@@ -365,12 +377,15 @@ class ZernikeOpticalWavefrontPSF(PSF):
         fy = []
 
         # need the interpolator to NOT be misaligned!
-        if np.sum(np.abs(self.interp.misalignment)) > 0:
-            if logger:
-                logger.warn('Warning! Resetting misalignment to zero!')
-            self.interp.misalignment = 0 * self.interp.misalignment
+        if self.kwargs['knn_file_name'] != '':
+            if np.sum(np.abs(self.interp.misalignment)) > 0:
+                if logger:
+                    logger.warn('Warning! Resetting misalignment to zero!')
+                self.interp.misalignment = 0 * self.interp.misalignment
 
-        stars_interpolated = self.interp.interpolateList(self.decaminfo.pixel_to_focalList(stars))
+            stars_interpolated = self.interp.interpolateList(self.decaminfo.pixel_to_focalList(stars))
+        else:
+            stars_interpolated = self._empty_zernikes(stars)
         for star in stars_interpolated:
             zernikes.append(star.fit.params)
             u.append(star.data.properties['u'])
@@ -386,7 +401,7 @@ class ZernikeOpticalWavefrontPSF(PSF):
         theta = np.arctan2(fy, fx)
 
         # construct misalignment array from fitter_kwargs and keys
-        coefs = np.zeros((11, self.kwargs['max_focal_zernike']))
+        coefs = np.zeros((11, 10))
         for key in self.keys:
             if key in ['r0', 'g1', 'g2']:
                 continue
@@ -700,9 +715,10 @@ class ZernikeOpticalWavefrontPSF(PSF):
         if logger:
             logger.info("Wrote the PSF model to extension %s",extname + '_model')
 
-        self.interp.write(fits, extname + '_interp', logger)
-        if logger:
-            logger.info("Wrote the PSF interp to extension %s",extname + '_interp')
+        if self.kwargs['knn_file_name'] != '':
+            self.interp.write(fits, extname + '_interp', logger)
+            if logger:
+                logger.info("Wrote the PSF interp to extension %s",extname + '_interp')
 
     def _finish_read(self, fits, extname, logger):
         """Read in misalignment parameters
@@ -727,4 +743,5 @@ class ZernikeOpticalWavefrontPSF(PSF):
 
         # load model and interp
         self.model = Model.read(fits, extname + '_model', logger)
-        self.interp = Interp.read(fits, extname + '_interp', logger)
+        if self.kwargs['knn_file_name'] != '':
+            self.interp = Interp.read(fits, extname + '_interp', logger)
