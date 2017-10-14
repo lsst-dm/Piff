@@ -85,7 +85,10 @@ class GPGeorgeInterp(Interp):
             else:
                 self.gp_template = [george.GP(self._eval_kernel(ker),
                                               white_noise=self.white_noise) for ker in self.kernel] 
-
+        self._2pcf = []
+        self._2pcf_dist = []
+        self._2pcf_fit = []
+        
     @staticmethod
     def _eval_kernel(kernel):
         # Some import trickery to get all subclasses of sklearn.gaussian_process.kernels.Kernel
@@ -140,21 +143,27 @@ class GPGeorgeInterp(Interp):
 
     def _optimizer_2pcf(self,gp,X,y,y_err):
         print "j utilise 2pcf"
-        dist_matrix = cdist(X,X)
-        dist_vector = dist_matrix.ravel()
-        sep_min = np.percentile(dist_vector,1.)
-        sep_max = np.percentile(dist_vector,99.)
-        size_bin = sep_max/10.
+        #dist_matrix = cdist(X,X)
+        #dist_vector = dist_matrix.ravel()
+        #sep_min = np.percentile(dist_vector,1.)
+        #sep_max = np.percentile(dist_vector,99.)
+        #size_bin = sep_max/10.
+
+        size_x = np.max(X[:,0]) - np.min(X[:,0])
+        size_y = np.max(X[:,1]) - np.min(X[:,1])
+        rho = float(len(X[:,0])) / (size_x * size_y)
+        MIN = np.sqrt(1./rho)
+        MAX = np.sqrt(size_x**2 + size_y**2)/2.
 
         if y_err is None or np.sum(y_err) == 0 :
-            cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=y-np.mean(y))
+            cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)))
         else:
-            cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=y-np.mean(y), w=1./y_err**2)
-        kk = treecorr.KKCorrelation(min_sep=sep_min, max_sep=sep_max, bin_size=size_bin)
+            cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)), w=1./y_err**2)
+        kk = treecorr.KKCorrelation(min_sep=MIN, max_sep=MAX, nbins=20)
         kk.process(cat)
 
         distance = np.exp(kk.logr)
-        Coord = np.array([distance,distance]).T
+        Coord = np.array([distance,np.zeros_like(distance)]).T
         print len(distance)
 
         def kernel(param):
@@ -173,6 +182,9 @@ class GPGeorgeInterp(Interp):
         gp.set_parameter_vector(results)
         print "I am done"
 
+        self._2pcf.append(kk.xi)
+        self._2pcf_dist.append(distance)
+        self._2pcf_fit.append(kernel(gp.get_parameter_vector()))
 
     def _optimizer_max_likelihood(self,gp,y):
         print "j utilise gradient likelihood"
