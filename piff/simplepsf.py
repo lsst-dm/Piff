@@ -255,7 +255,7 @@ class SimplePSF(PSF):
         TODO: does this need to return flux?
         """
         # Interpolate parameters to this position/properties:
-        star = self.interp.interpolate(star)
+        star = self.interp.interpolate(star.copy())
         # get the profile
         prof = self.model.getProfile(star)
         return prof
@@ -269,7 +269,7 @@ class SimplePSF(PSF):
         :returns:           Params
         """
         # Interpolate parameters to this position/properties:
-        star = self.interp.interpolate(star)
+        star = self.interp.interpolate(star.copy())
         return star.fit.params
 
     def _finish_write(self, fits, extname, logger=None):

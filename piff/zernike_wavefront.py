@@ -75,7 +75,7 @@ class ZernikeOpticalWavefrontPSF(PSF):
         # it turns out this part can also be slow!
         if logger:
             logger.info("Making interp")
-        if knn_file_name == '':
+        if knn_file_name == 'None':
             pass
         else:
             self.interp = DECamWavefront(knn_file_name, knn_extname, logger=logger, **self.interp_kwargs)
@@ -128,8 +128,8 @@ class ZernikeOpticalWavefrontPSF(PSF):
              ]
         # throw in default zernike parameters
         for zi in range(4, 11):  # do NOT include spherical
-            for dxy in range(1, 10 + 1):
-                zkey = 'zUV{0:02d}_zXY{1:02d}'.format(zi, dxy)
+            for dxy in range(1, max_focal_zernike + 1):
+                zkey = 'zUV{0:03d}_zXY{1:03d}'.format(zi, dxy)
                 self.keys.append(zkey)
                 # initial value
                 self.fitter_kwargs[zkey] = 0
@@ -160,7 +160,9 @@ class ZernikeOpticalWavefrontPSF(PSF):
         """Disable atmosphere within OpticalWavefrontPSF"""
         if logger:
             logger.info("Disabling atmosphere in OpticalWavefrontPSF")
-        self.fitter_kwargs['r0'] = None
+        # self.fitter_kwargs['r0'] = None
+        # make it a small kernel to see if we can cut down on the zernike problem
+        self.fitter_kwargs['r0'] = 0.5
         self.fitter_kwargs['g1'] = None
         self.fitter_kwargs['g2'] = None
 
@@ -318,7 +320,7 @@ class ZernikeOpticalWavefrontPSF(PSF):
         self._shapes = self._measure_shapes(self._fit_stars, logger=logger)
         self._errors = self._measure_shape_errors(self._fit_stars, logger=logger)
         # accumulate snrs
-        snrs = np.array([star.data.properties['snr'] for star in self._fit_stars])
+        snrs = np.array([self._get_snr(star) for star in self._fit_stars])
         # cut more stars if they fail shape measurement or error measurement, or if their shape values exceed a cut
 
         indx = ~np.any((self._shapes != self._shapes) +
@@ -361,6 +363,17 @@ class ZernikeOpticalWavefrontPSF(PSF):
             raise NotImplementedError('fitter {0} not implemented!'.format(self.kwargs['fitter_algorithm']))
 
     @classmethod
+    def _get_snr(cls, star):
+        if 'snr' in star.data.properties:
+            return star.data.properties['snr']
+        I = star.image.array
+        w = star.weight.array
+        Flux = (w*I).sum(dtype=float)
+        varf = w.sum(dtype=float)
+        snr = Flux / varf**0.5
+        return snr
+
+    @classmethod
     def _empty_zernikes(cls, stars):
         # put in starfits with empty params
         empty_params = np.zeros(8)
@@ -377,7 +390,7 @@ class ZernikeOpticalWavefrontPSF(PSF):
         fy = []
 
         # need the interpolator to NOT be misaligned!
-        if self.kwargs['knn_file_name'] != '':
+        if self.kwargs['knn_file_name'] != 'None':
             if np.sum(np.abs(self.interp.misalignment)) > 0:
                 if logger:
                     logger.warn('Warning! Resetting misalignment to zero!')
@@ -401,13 +414,13 @@ class ZernikeOpticalWavefrontPSF(PSF):
         theta = np.arctan2(fy, fx)
 
         # construct misalignment array from fitter_kwargs and keys
-        coefs = np.zeros((11, 10))
+        coefs = np.zeros((11, self.kwargs['max_focal_zernike']))
         for key in self.keys:
             if key in ['r0', 'g1', 'g2']:
                 continue
-            # zUV12_zXY34; kludgey as hell
-            uv = int(key[3:5])
-            xy = int(key[9:11])
+            # zUV012_zXY034; kludgey as hell
+            uv = int(key[3:6])
+            xy = int(key[10:13])
             coefs[uv - 1, xy - 1] = self.fitter_kwargs[key]
         # get the modified zernikes
         dzernikes = self.double_zernike.realize(coefs, r, theta).T
@@ -592,6 +605,11 @@ class ZernikeOpticalWavefrontPSF(PSF):
                 if logger:
                     logger.debug('{0}:\t{1:+.2e}'.format(key, val))
 
+        if len(p0) == 0:
+            if logger:
+                logger.warn('Warning! No free parameters in Zernike Wavefront fit. Moving in')
+            return
+
         # minimize chi2
         if logger:
             logger.info('Starting analytic guess. Initial chi2 = {0:.2e}'.format(self.chi2(p0)))
@@ -715,7 +733,7 @@ class ZernikeOpticalWavefrontPSF(PSF):
         if logger:
             logger.info("Wrote the PSF model to extension %s",extname + '_model')
 
-        if self.kwargs['knn_file_name'] != '':
+        if self.kwargs['knn_file_name'] != 'None':
             self.interp.write(fits, extname + '_interp', logger)
             if logger:
                 logger.info("Wrote the PSF interp to extension %s",extname + '_interp')
@@ -743,5 +761,5 @@ class ZernikeOpticalWavefrontPSF(PSF):
 
         # load model and interp
         self.model = Model.read(fits, extname + '_model', logger)
-        if self.kwargs['knn_file_name'] != '':
+        if self.kwargs['knn_file_name'] != 'None':
             self.interp = Interp.read(fits, extname + '_interp', logger)

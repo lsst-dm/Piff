@@ -104,14 +104,16 @@ class OptAtmoPSF(PSF):
                 if self.optpsf.fitter_kwargs['fix_' + key]:
                     logger.warning("Warning! You have left {0} fixed. This parameter coarsely emulates the atmosphere (so that we can get near the correct location before we actually fit the atmosphere), so it is usually good to have on.".format(key))
 
-        self.optpsf.fit(self.stars, wcs, pointing, logger=logger)
+        # each fitter has its own list of stars to mess wit
+        optpsf_fit_stars = [star for star in self.stars]
+        self.optpsf.fit(optpsf_fit_stars, wcs, pointing, logger=logger)
 
         # update stars from outlier rejection
         # TODO: mark stars probably changes this
         if self.optpsf.kwargs['n_fit_stars']:
-            nremoved = self.optpsf.kwargs['n_fit_stars'] - len(self.optpsf._fit_stars)
+            nremoved = self.optpsf.kwargs['n_fit_stars'] - len(self.optpsf.stars)
         else:
-            nremoved = len(self.stars) - len(self.optpsf._fit_stars)
+            nremoved = len(self.stars) - len(self.optpsf.stars)
         if logger:
             if nremoved > 0:
                 logger.warning("Removed {0} stars in OpticalWavefrontPSF fit".format(nremoved))
@@ -120,18 +122,14 @@ class OptAtmoPSF(PSF):
 
         # disable r0,g1,g2 from OpticalWavefrontPSF, since AtmoPSF deals with those bits.
         self.optpsf.disable_atmosphere(logger=logger)
-        if logger:
-            logger.debug("optpsf interp misalignment is")
-            logger.debug(self.optpsf.interp.misalignment)
 
         # extract profiles for AtmoPSF
         if logger:
             logger.info("Extracting OpticalWavefrontPSF profiles")
-        # TODO: add these profiles to the stars
-        profiles = [self.optpsf.getProfile(star) for star in self.stars]
         # clean out starfits
         self.stars = [Star(star.data, None) for star in self.stars]
         # now add the profiles
+        profiles = [self.optpsf.getProfile(star) for star in self.stars]
         for star, profile in zip(self.stars, profiles):
             star.data.properties['other_model'] = profile
 
@@ -139,7 +137,8 @@ class OptAtmoPSF(PSF):
         if logger:
             logger.info("Fitting AtmospherePSF")
         # TODO: want to make sure when we draw stars in atmopsf that we draw the same with self.drawStar
-        self.atmopsf.fit(self.stars, wcs, pointing, logger=logger)
+        atmopsf_fit_stars = [star for star in self.stars]
+        self.atmopsf.fit(atmopsf_fit_stars, wcs, pointing, logger=logger)
 
         # update stars from outlier rejection
         nremoved = len(self.stars) - len(self.atmopsf.stars)
@@ -166,7 +165,7 @@ class OptAtmoPSF(PSF):
                     logger.warn("Unable to produce chisq?!")
 
         # the job done, remove other_model from star properties
-        for stars in [self.stars, self.atmopsf.stars, self.optpsf.stars, self.optpsf._fit_stars]:
+        for stars in [self.stars, self.atmopsf.stars, self.optpsf.stars]:
             for star in stars:
                 if 'other_model' in star.data.properties:
                     star.data.properties.pop('other_model')
@@ -425,9 +424,12 @@ class OpticalWavefrontPSF(PSF):
         """Disable atmosphere within OpticalWavefrontPSF"""
         if logger:
             logger.info("Disabling atmosphere in OpticalWavefrontPSF")
-        self.update_psf_params(r0=None, g1=None, g2=None, logger=logger)
+        # self.update_psf_params(r0=None, g1=None, g2=None, logger=logger)
+        # # note it in fitter_kwargs
+        # self.fitter_kwargs['r0'] = None
+        self.update_psf_params(r0=0.5, g1=None, g2=None, logger=logger)
         # note it in fitter_kwargs
-        self.fitter_kwargs['r0'] = None
+        self.fitter_kwargs['r0'] = 0.5
         self.fitter_kwargs['g1'] = None
         self.fitter_kwargs['g2'] = None
 

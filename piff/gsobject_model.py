@@ -68,7 +68,7 @@ class GSObjectModel(Model):
 
         if 'other_model' in star.data.properties:
             # TODO: what do we do if the other_model is a pixel image like in pixel_grid?
-            prof = galsim.Convolve([self.getProfile(star), star.data.properties['other_model']])
+            prof = galsim.Convolve([star.data.properties['other_model'], self.getProfile(star)])
             center = galsim.PositionD(*star.fit.center)
             offset = star.data.image_pos + center - star.data.image.trueCenter()
             model_image = prof.drawImage(star.data.image.copy(), method=self._method, offset=offset)

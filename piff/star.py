@@ -547,6 +547,10 @@ class Star(object):
     def copy(self):
         return Star(self.data.copy(), self.fit.copy())
 
+    def clean(self):
+        # return star without its fit
+        return Star(self.data.copy(), None)
+
 class StarData(object):
     """A class that encapsulates all the relevant information about an observed star.
 
