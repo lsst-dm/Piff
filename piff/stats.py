@@ -24,7 +24,8 @@ import os
 import warnings
 import galsim
 
-from gsobject_model import Gaussian, Kolmogorov
+from .gsobject_model import Gaussian, Kolmogorov
+from .star import Star
 
 class Stats(object):
     """The base class for getting the statistics of a set of stars.
@@ -189,10 +190,12 @@ class Stats(object):
             for star in stars:
                 # [flux, cx, cy, sigma, g1, g2, flag]
                 try:
-                    star_fit = model.fit(psf.drawStar(star), logger=logger)
-                    shapes_model.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], True])
+                    # gotta wipe out the fit param
+                    star_drawn = psf.drawStar(star)
+                    star_fit = model.fit(Star(star_drawn.data, None), logger=logger)
+                    shapes_model.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], 0])
                 except:
-                    shapes_model.append([0, 0, 0, 0, 0, 0, False])
+                    shapes_model.append([0, 0, 0, 0, 0, 0, 1])
             shapes_model = np.array(shapes_model)
         for star, shape in zip(stars, shapes_model):
             logger.debug("model shape for star at %s is %s",star.image_pos, shape)
