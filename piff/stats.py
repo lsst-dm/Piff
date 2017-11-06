@@ -168,9 +168,9 @@ class Stats(object):
                 # [flux, cx, cy, sigma, g1, g2, flag]
                 try:
                     star_fit = model.fit(star, logger=logger)
-                    shapes_truth.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], True])
+                    shapes_truth.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], 0])
                 except:
-                    shapes_truth.append([0, 0, 0, 0, 0, 0, False])
+                    shapes_truth.append([0, 0, 0, 0, 0, 0, 1])
             shapes_truth = np.array(shapes_truth)
         else:
             raise Exception('Unrecognized self.algorithm')
