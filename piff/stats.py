@@ -165,8 +165,11 @@ class Stats(object):
             shapes_truth = []
             for star in stars:
                 # [flux, cx, cy, sigma, g1, g2, flag]
-                star_fit = model.fit(star, logger=logger)
-                shapes_truth.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], True])
+                try:
+                    star_fit = model.fit(star, logger=logger)
+                    shapes_truth.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], True])
+                except:
+                    shapes_truth.append([0, 0, 0, 0, 0, 0, False])
             shapes_truth = np.array(shapes_truth)
         else:
             raise Exception('Unrecognized self.algorithm')
@@ -185,8 +188,11 @@ class Stats(object):
             shapes_model = []
             for star in stars:
                 # [flux, cx, cy, sigma, g1, g2, flag]
-                star_fit = model.fit(psf.drawStar(star), logger=logger)
-                shapes_model.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], True])
+                try:
+                    star_fit = model.fit(psf.drawStar(star), logger=logger)
+                    shapes_model.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], True])
+                except:
+                    shapes_model.append([0, 0, 0, 0, 0, 0, False])
             shapes_model = np.array(shapes_model)
         for star, shape in zip(stars, shapes_model):
             logger.debug("model shape for star at %s is %s",star.image_pos, shape)
