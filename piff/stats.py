@@ -24,6 +24,8 @@ import os
 import warnings
 import galsim
 
+from gsobject_model import Gaussian, Kolmogorov
+
 class Stats(object):
     """The base class for getting the statistics of a set of stars.
 
@@ -140,7 +142,7 @@ class Stats(object):
         canvas.print_figure(file_name, dpi=100)
 
     def measureShapes(self, psf, stars, logger=None):
-        """Compare PSF and true star shapes with HSM algorithm
+        """Compare PSF and true star shapes with HSM algorithm or gsobject
 
         :param psf:         A PSF Object
         :param stars:       A list of Star instances.
@@ -153,7 +155,21 @@ class Stats(object):
         logger = galsim.config.LoggerWrapper(logger)
         # measure moments with Gaussian on image
         logger.debug("Measuring shapes of real stars")
-        shapes_truth = np.array([ piff.util.hsm(star) for star in stars ])
+        if self.algorithm == 'hsm':
+            shapes_truth = np.array([ piff.util.hsm(star) for star in stars ])
+        elif self.algorithm == 'gaussian' or self.algorithm == 'kolmogorov':
+            if self.algorithm == 'gaussian':
+                model = Gaussian(fastfit=False, force_model_center=False, include_pixel=True, logger=logger)
+            elif self.algorithm == 'kolmogorov':
+                model = Kolmogorov(fastfit=False, force_model_center=False, include_pixel=True, logger=logger)
+            shapes_truth = []
+            for star in stars:
+                # [flux, cx, cy, sigma, g1, g2, flag]
+                star_fit = model.fit(star, logger=logger)
+                shapes_truth.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], True])
+            shapes_truth = np.array(shapes_truth)
+        else:
+            raise Exception('Unrecognized self.algorithm')
         for star, shape in zip(stars, shapes_truth):
             logger.debug("real shape for star at %s is %s",star.image_pos, shape)
 
@@ -163,7 +179,15 @@ class Stats(object):
 
         # generate the model stars and measure moments
         logger.debug("Generating and Measuring Model Stars")
-        shapes_model = np.array([ piff.util.hsm(psf.drawStar(star)) for star in stars ])
+        if self.algorithm == 'hsm':
+            shapes_model = np.array([ piff.util.hsm(psf.drawStar(star)) for star in stars ])
+        elif self.algorithm == 'gaussian' or self.algorithm == 'kolmogorov':
+            shapes_model = []
+            for star in stars:
+                # [flux, cx, cy, sigma, g1, g2, flag]
+                star_fit = model.fit(psf.drawStar(star), logger=logger)
+                shapes_model.append([star_fit.flux, star_fit.fit.params[0], star_fit.fit.params[1], star_fit.fit.params[2], star_fit.fit.params[3], star_fit.fit.params[4], True])
+            shapes_model = np.array(shapes_model)
         for star, shape in zip(stars, shapes_model):
             logger.debug("model shape for star at %s is %s",star.image_pos, shape)
 
@@ -193,7 +217,7 @@ class ShapeHistogramsStats(Stats):
         :dg1:       The g1 residual, g1 - g1_model
         :dg2:       The g2 residual, g2 - g2_model
     """
-    def __init__(self, bins_size=10, bins_shape=10, file_name=None, logger=None):
+    def __init__(self, bins_size=10, bins_shape=10, algorithm='hsm', file_name=None, logger=None):
         """
         The `bins_size` and `bins_shape` parameters are typically the number of bins for the
         size and shape histograms respectively.  However, they will be passed to the
@@ -203,10 +227,14 @@ class ShapeHistogramsStats(Stats):
         :param bins_size:   Number of bins for size histograms. [default: 10]
         :param bins_shape:  Number of bins for shape histograms. [default: 10]
         :param file_name:   Name of the file to output to. [default: None]
+        :param algorithm:   What algorithm do we use to measure the shapes.
+                            Choices: hsm, gaussian, kolmogorov, where the
+                            latter two use gsobject model. [default: hsm]
         """
         self.bins_size = bins_size
         self.bins_shape = bins_shape
         self.file_name = file_name
+        self.algorithm = algorithm
 
     def compute(self, psf, stars, logger=None):
         """
@@ -328,7 +356,7 @@ class RhoStats(Stats):
     TreeCorr GGCorrelation instances.  But there are other quantities that may be of interest
     in some cases, so we provide access to the full object.
     """
-    def __init__(self, min_sep=0.5, max_sep=300, bin_size=0.1, file_name=None,
+    def __init__(self, min_sep=0.5, max_sep=300, bin_size=0.1, algorithm='hsm', file_name=None,
                  logger=None, **kwargs):
         """
         :param min_sep:     Minimum separation (in arcmin) for pairs. [default: 0.5]
@@ -345,6 +373,7 @@ class RhoStats(Stats):
         if 'sep_units' not in self.tckwargs:
             self.tckwargs['sep_units'] = 'arcmin'
         self.file_name = file_name
+        self.algorithm = algorithm
 
     def compute(self, psf, stars, logger=None):
         """

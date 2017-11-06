@@ -44,7 +44,7 @@ class TwoDHistStats(Stats):
     pixel corresponds to reducing_function([objects in u-v voxel])
     """
 
-    def __init__(self, number_bins_u=11, number_bins_v=22, reducing_function='np.median',
+    def __init__(self, number_bins_u=11, number_bins_v=22, reducing_function='np.median', algorithm='hsm',
                  file_name=None, logger=None):
         """
         :param number_bins_u:       Number of bins in u direction [default: 11]
@@ -57,6 +57,7 @@ class TwoDHistStats(Stats):
         self.number_bins_u = number_bins_u
         self.number_bins_v = number_bins_v
         self.reducing_function = eval(reducing_function)
+        self.algorithm = algorithm
 
         self.file_name = file_name
 
@@ -393,7 +394,7 @@ class WhiskerStats(Stats):
 
     Because e1, e2 do not have units, w does not either.
     """
-    def __init__(self, number_bins_u=11, number_bins_v=22, reducing_function='np.median',
+    def __init__(self, number_bins_u=11, number_bins_v=22, reducing_function='np.median', algorithm='hsm',
                  file_name=None, logger=None):
         """
         :param number_bins_u:       Number of bins in u direction [default: 11]
@@ -406,6 +407,7 @@ class WhiskerStats(Stats):
         self.number_bins_u = number_bins_u
         self.number_bins_v = number_bins_v
         self.reducing_function = eval(reducing_function)
+        self.algorithm = algorithm
 
         self.file_name = file_name
 
